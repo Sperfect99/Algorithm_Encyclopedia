@@ -600,6 +600,38 @@ def run_race(
 
 
 
+def _print_bar_chart(results: list[tuple[str, RunResult]]) -> None:
+    """Print an ASCII bar chart of steps for each algorithm.
+
+    The longest bar = the algorithm with the most steps (100%).
+    Failed runs show at the bottom without a bar.
+    Keeps things visual — the table above has the exact numbers,
+    this just makes the relative differences jump out.
+    """
+    BAR_WIDTH   = 32
+    NAME_WIDTH  = 14
+
+    solved  = [(n, r) for n, r in results if r.steps != float('inf')]
+    failed  = [(n, r) for n, r in results if r.steps == float('inf')]
+
+    if not solved:
+        return
+
+    max_steps = max(r.steps for _, r in solved)
+
+    print(f"\n  {C_BIGO}Steps — search effort (lower = explored less){C_END}\n")
+    for name, r in sorted(solved, key=lambda x: x[1].steps):
+        filled = round(r.steps / max_steps * BAR_WIDTH)
+        empty  = BAR_WIDTH - filled
+        bar    = f"{C_PATH}{'█' * filled}{C_END}{C_DOT}{'░' * empty}{C_END}"
+        print(f"  {name:<{NAME_WIDTH}} {bar}  {int(r.steps)}")
+
+    for name, _ in failed:
+        print(f"  {name:<{NAME_WIDTH}} {C_BACK}FAILED{C_END}")
+
+    print()
+
+
 # --- BENCHMARK ---
 
 def run_benchmark(
@@ -679,6 +711,8 @@ def run_benchmark(
         "  PATH   = solution length — this is what actually matters.\n"
         "  EFFICIENCY = Path ÷ Steps — IDA* is low by design.\n"
     )
+
+    _print_bar_chart(results)
 
     # Ask about export before the ENTER prompt so you can choose without
     # having to re-run the whole benchmark
