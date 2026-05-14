@@ -305,7 +305,6 @@ def _main_loop() -> None:
         elif choice == "16":
             run_benchmark(my_maze, delay, skip_frames, terrain_active, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
-            input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
 
         elif choice == "17":
             show_tutorial()

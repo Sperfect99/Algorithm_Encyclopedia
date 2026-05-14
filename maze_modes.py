@@ -9,8 +9,11 @@ The four modes extracted from the old monolith:
 """
 from __future__ import annotations
 
+import csv
+import json
 import os
 import time
+from datetime import datetime
 from typing import Callable
 
 from core.types        import RunResult, _StepRecord
@@ -22,6 +25,71 @@ from algorithms.registry import _ALGO_NAMES, _REGISTRY
 # These are passed to dispatch so it runs instantly with no recording
 _BENCH_DELAY: float = 0.0
 _BENCH_SKIP:  int   = 999_999
+
+_EXPORT_DIR: str = "benchmark_exports"
+
+
+# --- BENCHMARK EXPORT ---
+
+def _save_benchmark_export(
+    results:        list[tuple[str, RunResult]],
+    maze:           list[list[int | str]],
+    terrain_active: bool,
+) -> tuple[str, str]:
+    """Write results to CSV and maze to JSON, both under benchmark_exports/.
+
+    Filenames include a timestamp and complexity level so runs don't overwrite
+    each other and you can tell at a glance what maze each one used.
+    Returns (csv_path, maze_path).
+    """
+    from maze_genV4 import MAZE_SIZES
+
+    rows, cols = len(maze), len(maze[0])
+
+    # Reverse-lookup complexity from maze dimensions — works because
+    # generate_maze() always produces the exact sizes in MAZE_SIZES.
+    complexity = next(
+        (k for k, (r, c) in MAZE_SIZES.items() if r == rows and c == cols),
+        0,
+    )
+
+    os.makedirs(_EXPORT_DIR, exist_ok=True)
+
+    stamp    = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    base     = f"{stamp}_c{complexity}"
+    csv_path  = os.path.join(_EXPORT_DIR, f"{base}.csv")
+    maze_path = os.path.join(_EXPORT_DIR, f"{base}.maze")
+
+    # CSV — one row per algorithm, sorted by steps (same order as the table)
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["algorithm", "steps", "time_ms", "path_len", "path_cost", "efficiency_pct"])
+        for name, r in results:
+            if r.steps == float("inf"):
+                w.writerow([name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
+            else:
+                eff = f"{r.path_len / r.steps * 100:.1f}" if r.steps > 0 else "0.0"
+                w.writerow([
+                    name,
+                    int(r.steps),
+                    f"{r.compute_time * 1000:.2f}",
+                    r.path_len,
+                    r.path_cost,
+                    eff,
+                ])
+
+    # Maze JSON — grid + metadata so you can reload it later
+    maze_data = {
+        "complexity":  complexity,
+        "rows":        rows,
+        "cols":        cols,
+        "terrain":     terrain_active,
+        "grid":        maze,
+    }
+    with open(maze_path, "w", encoding="utf-8") as f:
+        json.dump(maze_data, f, separators=(",", ":"))
+
+    return csv_path, maze_path
 
 
 
@@ -491,4 +559,21 @@ def run_benchmark(
         "  PATH   = solution length — this is what actually matters.\n"
         "  EFFICIENCY = Path ÷ Steps — IDA* is low by design.\n"
     )
-    input(f"👉 Press {C_PATH}ENTER{C_END} to continue…")
+
+    # Ask about export before the ENTER prompt so you can choose without
+    # having to re-run the whole benchmark
+    while True:
+        save_ans = input("  💾 Save results to CSV? (y/n): ").strip().lower()
+        if save_ans in {"y", "yes", "n", "no"}:
+            break
+
+    if save_ans in {"y", "yes"}:
+        try:
+            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active)
+            print(f"\n  ✅ Saved to {C_PATH}{_EXPORT_DIR}/{C_END}")
+            print(f"     {csv_path}")
+            print(f"     {maze_path}")
+        except Exception as exc:
+            print(f"\n  ⚠️  Export failed: {exc}")
+
+    input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
