@@ -55,6 +55,8 @@ from maze_modes import (
     run_duel,
     run_race,
     run_benchmark,
+    save_maze,
+    load_maze,
 )
 
 
@@ -186,13 +188,22 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
 
     print()
     while True:
+        raw = input("Enter level (0-10) or [L] load a saved maze: ").strip()
+        if raw.lower() in {'l', 'load'}:
+            loaded = load_maze()
+            if loaded:
+                maze, terrain_active = loaded
+                delay, skip_frames   = _prompt_speed()
+                return maze, delay, skip_frames, terrain_active
+            # cancelled — loop back and show the prompt again
+            continue
         try:
-            comp = int(input("Enter level (0-10): "))
+            comp = int(raw)
             if 0 <= comp <= 10:
                 break
-            print("  Please enter 0–10.")
+            print("  Please enter 0–10 or L.")
         except ValueError:
-            print("  Invalid input — enter an integer.")
+            print("  Invalid — enter a number (0–10) or L to load a file.")
 
     maze_rows, maze_cols = MAZE_SIZES[comp]
     _check_terminal_size(maze_rows, maze_cols)
@@ -445,9 +456,9 @@ def _main_loop() -> None:
             print("  Invalid option — please try again.")
             continue
 
-        # After post-run tools: ask whether to keep or regenerate the maze
+        # After post-run tools: ask whether to keep, save, or regenerate the maze
         while True:
-            ans = input("\n  [ENTER/n] keep this maze   [y] generate new maze: ").strip().lower()
+            ans = input("\n  [ENTER/n] keep   [y] new maze   [s] save maze: ").strip().lower()
             if ans in {'y', 'yes'}:
                 my_maze, delay, skip_frames, terrain_active = setup_new_maze()
                 recording       = []
@@ -461,10 +472,15 @@ def _main_loop() -> None:
                         f"(toggle off/on to reset){C_END}"
                     )
                 break
+            elif ans in {'s', 'save'}:
+                path = save_maze(my_maze, terrain_active)
+                if path:
+                    print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
+                time.sleep(0.8)
             elif ans in {'n', 'no', ''}:
                 break
             else:
-                print("  Please answer y or n.")
+                print("  Please answer y, n, or s.")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,10 @@ The four modes extracted from the old monolith:
     run_duel()      — head-to-head path overlay (two algos, one maze)
     run_race()      — split-screen simultaneous replay
     run_benchmark() — all algorithms at once with a results table
+
+Maze persistence:
+    save_maze()     — write a maze to benchmark_exports/ as .maze JSON
+    load_maze()     — pick a saved .maze file and load it back
 """
 from __future__ import annotations
 
@@ -26,7 +30,8 @@ from algorithms.registry import _ALGO_NAMES, _REGISTRY
 _BENCH_DELAY: float = 0.0
 _BENCH_SKIP:  int   = 999_999
 
-_EXPORT_DIR: str = "benchmark_exports"
+_EXPORT_DIR:      str = "benchmark_exports"
+_SAVED_MAZES_DIR: str = "saved_mazes"
 
 
 # --- BENCHMARK EXPORT ---
@@ -90,6 +95,121 @@ def _save_benchmark_export(
         json.dump(maze_data, f, separators=(",", ":"))
 
     return csv_path, maze_path
+
+
+# --- MAZE SAVE / LOAD ---
+
+def save_maze(
+    maze:           list[list[int | str]],
+    terrain_active: bool,
+) -> str | None:
+    """Dump the current maze to saved_mazes/ as a .maze JSON file.
+
+    Seconds are included in the timestamp so rapid saves don't collide.
+    Returns the path it was saved to, or None if the write failed.
+    """
+    from maze_genV4 import MAZE_SIZES
+
+    rows, cols = len(maze), len(maze[0])
+    complexity = next(
+        (k for k, (r, c) in MAZE_SIZES.items() if r == rows and c == cols),
+        0,
+    )
+
+    os.makedirs(_SAVED_MAZES_DIR, exist_ok=True)
+
+    stamp     = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    maze_path = os.path.join(_SAVED_MAZES_DIR, f"{stamp}_c{complexity}.maze")
+
+    try:
+        with open(maze_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "complexity": complexity,
+                    "rows":       rows,
+                    "cols":       cols,
+                    "terrain":    terrain_active,
+                    "grid":       maze,
+                },
+                f,
+                separators=(",", ":"),
+            )
+        return maze_path
+    except OSError as exc:
+        print(f"\n  ⚠️  Couldn't save maze: {exc}")
+        return None
+
+
+def load_maze() -> tuple[list[list[int | str]], bool] | None:
+    """List all .maze files from both saved_mazes/ and benchmark_exports/,
+    let the user pick one, and return (maze, terrain_active).
+
+    Searches both folders so you can reload a manually saved maze or the
+    exact maze a benchmark ran on. Returns None if cancelled or no files found.
+    """
+    # Collect files from both dirs, labelled by source
+    entries: list[tuple[str, str, dict]] = []  # (display_label, path, meta)
+
+    for folder, tag in [(_SAVED_MAZES_DIR, "saved"), (_EXPORT_DIR, "benchmark")]:
+        if not os.path.isdir(folder):
+            continue
+        for fname in sorted(f for f in os.listdir(folder) if f.endswith(".maze")):
+            path = os.path.join(folder, fname)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    meta = json.load(f)
+                terrain_s = "terrain ON" if meta.get("terrain") else "terrain OFF"
+                label = (
+                    f"  [{tag}]  {fname:<42}"
+                    f"  c{meta.get('complexity', '?')}"
+                    f"  {meta.get('rows', '?')}×{meta.get('cols', '?')}"
+                    f"  {terrain_s}"
+                )
+                entries.append((label, path, meta))
+            except (OSError, json.JSONDecodeError):
+                entries.append((f"  [{tag}]  {fname}  (unreadable)", path, {}))
+
+    if not entries:
+        print("\n  No saved mazes yet — use [s] to save one, or run a benchmark with export.")
+        return None
+
+    print("\n  Available mazes:\n")
+    for i, (label, _, _) in enumerate(entries, 1):
+        print(f"  {i:>2}.{label}")
+
+    print()
+    while True:
+        raw = input(f"  Select (1–{len(entries)}) or 0 to cancel: ").strip()
+        try:
+            choice = int(raw)
+        except ValueError:
+            print("  Enter a number.")
+            continue
+
+        if choice == 0:
+            return None
+
+        if not (1 <= choice <= len(entries)):
+            print(f"  Enter a number between 0 and {len(entries)}.")
+            continue
+
+        _, path, _ = entries[choice - 1]
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+
+            maze = [
+                [cell if isinstance(cell, str) else int(cell) for cell in row]
+                for row in data["grid"]
+            ]
+            terrain_active = bool(data.get("terrain", False))
+            rows, cols     = len(maze), len(maze[0])
+            print(f"\n  ✅ Loaded  ({rows}×{cols})")
+            return maze, terrain_active
+
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            print(f"  ⚠️  Failed to read file: {exc}")
+            return None
 
 
 
