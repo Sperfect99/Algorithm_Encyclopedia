@@ -2,10 +2,11 @@
 maze_modes.py — interactive post-run and system modes.
 
 The four modes extracted from the old monolith:
-    run_autopsy()   — step-by-step replay of a recorded run
-    run_duel()      — head-to-head path overlay (two algos, one maze)
-    run_race()      — split-screen simultaneous replay
-    run_benchmark() — all algorithms at once with a results table
+    run_autopsy()     — step-by-step replay of a recorded run
+    run_duel()        — head-to-head path overlay (two algos, one maze)
+    run_race()        — split-screen simultaneous replay
+    run_benchmark()   — all algorithms at once with a results table
+    run_multi_stats() — N runs across fresh mazes, shows min/max/mean/std
 
 Maze persistence:
     save_maze()     — write a maze to benchmark_exports/ as .maze JSON
@@ -14,8 +15,10 @@ Maze persistence:
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import os
+import statistics as _stats
 import time
 from datetime import datetime
 from typing import Callable
@@ -24,7 +27,7 @@ from core.types        import RunResult, _StepRecord
 from ui.theme          import *  # noqa: F401,F403
 from ui.terminal_utils import clear_screen, _center_ansi, _term_width, precise_sleep
 from ui.renderer       import render, render_split, CELL_RENDER
-from algorithms.registry import _ALGO_NAMES, _REGISTRY
+from algorithms.registry import _ALGO_NAMES, _REGISTRY, _get_generator
 
 # These are passed to dispatch so it runs instantly with no recording
 _BENCH_DELAY: float = 0.0
@@ -729,5 +732,226 @@ def run_benchmark(
             print(f"     {maze_path}")
         except Exception as exc:
             print(f"\n  ⚠️  Export failed: {exc}")
+
+    input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
+
+# --- MULTI-RUN STATISTICS ---
+
+def run_multi_stats(dispatch_fn: Callable) -> None:
+    """Run selected algorithms N times on fresh mazes and report statistics.
+
+    Each run generates a new maze so the results reflect performance across
+    many different layouts, not just one lucky or unlucky maze.
+    """
+    from maze_genV4 import generate_maze, MAZE_SIZES
+
+    _SIZE_LABELS = {
+        0: "tiny",   1: "tiny",   2: "small",  3:  "small",
+        4: "medium", 5: "medium", 6: "large",  7:  "large",
+        8: "huge",   9: "huge",  10: "massive",
+    }
+    W = _term_width()
+
+    # --- algorithm selection ---
+    clear_screen()
+    print(f"\n  {C_BIGO}📊  MULTI-RUN STATISTICS{C_END}\n")
+    print("  Which algorithms to include?\n")
+
+    specs = list(_REGISTRY)
+    col1, col2 = specs[:8], specs[8:]
+    for i, s1 in enumerate(col1):
+        star1 = "★" if (s1.cost_optimal or s1.hop_optimal) else " "
+        left  = f"  {s1.key:>2}. {s1.display_name:<20} {star1}"
+        right = ""
+        if i < len(col2):
+            s2    = col2[i]
+            star2 = "★" if (s2.cost_optimal or s2.hop_optimal) else " "
+            right = f"  {s2.key:>2}. {s2.display_name:<20} {star2}"
+        print(f"{left}{right}")
+
+    print()
+    while True:
+        raw = input('  Numbers (e.g. "1,3,5") or "all": ').strip().lower()
+        if raw == "all":
+            selected = specs
+            break
+        try:
+            keys     = {p.strip() for p in raw.split(",")}
+            selected = [s for s in specs if s.key in keys]
+            if selected:
+                break
+            print("  No valid numbers — try again.")
+        except Exception:
+            print("  Invalid input.")
+
+    print(f"\n  {C_DOT}Selected: {', '.join(s.display_name for s in selected)}{C_END}")
+
+    # --- N runs ---
+    print("\n  Runs per algorithm:")
+    print("    1)  5     2) 10     3) 20     4) 50     5) custom")
+    _RUN_PRESETS = {"1": 5, "2": 10, "3": 20, "4": 50}
+    while True:
+        rc = input("  → ").strip()
+        if rc in _RUN_PRESETS:
+            N = _RUN_PRESETS[rc]
+            break
+        if rc == "5":
+            try:
+                N = int(input("  Custom N: ").strip())
+                if N > 0:
+                    break
+                print("  Must be positive.")
+            except ValueError:
+                print("  Enter a number.")
+            continue
+        print("  Enter 1–5.")
+
+    # --- complexity mode ---
+    print("\n  Complexity mode:")
+    print("    a) Single level — same maze size every run")
+    print("    b) Multi level  — rotate through levels you pick")
+    while True:
+        mode = input("  → ").strip().lower()
+        if mode in {"a", "b"}:
+            break
+        print("  Enter a or b.")
+
+    # Show the complexity table in two columns so it's readable
+    print("\n  Complexity levels:\n")
+    items = list(MAZE_SIZES.items())
+    half  = (len(items) + 1) // 2
+    for i in range(half):
+        l  = items[i]
+        r  = items[i + half] if i + half < len(items) else None
+        lf = f"  {l[0]:>2}  →  {l[1][0]:>2}×{l[1][1]:<3}  ({_SIZE_LABELS[l[0]]})"
+        rf = f"  {r[0]:>2}  →  {r[1][0]:>2}×{r[1][1]:<3}  ({_SIZE_LABELS[r[0]]})" if r else ""
+        print(f"{lf:<34}{rf}")
+
+    print()
+    if mode == "a":
+        while True:
+            try:
+                comp = int(input("  Level (0–10): ").strip())
+                if 0 <= comp <= 10:
+                    complexities = [comp]
+                    break
+                print("  Enter 0–10.")
+            except ValueError:
+                print("  Enter a number.")
+    else:
+        while True:
+            raw = input("  Levels, comma-separated (e.g. 3,5,7): ").strip()
+            try:
+                comps = [int(x.strip()) for x in raw.split(",")]
+                if comps and all(0 <= c <= 10 for c in comps):
+                    complexities = comps
+                    break
+                print("  Each level must be 0–10.")
+            except ValueError:
+                print("  Numbers only, separated by commas.")
+
+    # --- run all ---
+    total = len(selected) * N
+    done  = 0
+
+    # per-algorithm step lists — float('inf') for failed runs
+    step_log: dict[str, list[float]] = {s.display_name: [] for s in selected}
+
+    print(f"\n  Running {len(selected)} × {N} = {total} runs…\n")
+
+    for algo in selected:
+        fn = _get_generator(algo.module_name)
+        # fresh cycle per algorithm so every algo gets the same complexity sequence
+        comp_seq = itertools.cycle(complexities)
+
+        for run_idx in range(N):
+            comp = next(comp_seq)
+            maze = generate_maze(comp)
+
+            # run headless — we only want the final result
+            result_steps = float('inf')
+            for state in fn(maze):
+                if state["type"] == "done":
+                    result_steps = state["result"].steps
+                    break
+
+            step_log[algo.display_name].append(result_steps)
+            done += 1
+
+            bar_n  = 28
+            filled = int(done / total * bar_n)
+            bar    = f"{C_PATH}{'█' * filled}{C_END}{'░' * (bar_n - filled)}"
+            print(
+                f"\r  [{bar}]  {done}/{total}"
+                f"  {C_DIM}{algo.display_name}  run {run_idx + 1}/{N}{C_END}",
+                end="", flush=True,
+            )
+
+    print()  # end the progress line
+
+    # --- results table ---
+    clear_screen()
+    comps_str = ", ".join(str(c) for c in complexities)
+    print(f"\n  {C_BIGO}📊 MULTI-RUN STATISTICS{C_END}"
+          f"  |  N={N}  |  Complexity: {comps_str}\n")
+
+    hdr = f"  {'Algorithm':<22} {'Min':>6} {'Max':>6} {'Mean':>7} {'Std':>6}   Rate"
+    sep = "  " + "─" * (len(hdr) - 2)
+    print(hdr)
+    print(sep)
+
+    agg_rows: list[tuple] = []
+    for s in selected:
+        name = s.display_name
+        runs = step_log[name]
+        ok   = [v for v in runs if v != float('inf')]
+
+        if ok:
+            mn   = int(min(ok))
+            mx   = int(max(ok))
+            mean = int(_stats.mean(ok))
+            std  = int(_stats.stdev(ok)) if len(ok) > 1 else 0
+            rate = f"{len(ok)}/{N}"
+            clr  = C_BACK if len(ok) < N else C_END
+            print(f"  {clr}{name:<22}{C_END} {mn:>6} {mx:>6} {mean:>7} {std:>6}   {rate}")
+        else:
+            mn = mx = mean = std = None
+            rate = f"0/{N}"
+            print(f"  {C_DIM}{name:<22}{'—':>6} {'—':>6} {'—':>7} {'—':>6}   {rate}{C_END}")
+
+        agg_rows.append((name, mn, mx, mean, std, len(ok), N))
+
+    print(sep)
+
+    # --- CSV export ---
+    print()
+    while True:
+        save_ans = input("  💾 Save to CSV? (y/n): ").strip().lower()
+        if save_ans in {"y", "yes", "n", "no"}:
+            break
+
+    if save_ans in {"y", "yes"}:
+        os.makedirs(_EXPORT_DIR, exist_ok=True)
+        stamp    = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        tag      = comps_str.replace(", ", "_")
+        path     = os.path.join(_EXPORT_DIR, f"{stamp}_stats_c{tag}_N{N}.csv")
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["algorithm", "min", "max", "mean", "std",
+                            "successes", "runs", "success_rate"])
+                for name, mn, mx, mean, std, ok_c, total_n in agg_rows:
+                    pct = f"{ok_c / total_n * 100:.0f}%"
+                    w.writerow([
+                        name,
+                        mn   if mn   is not None else "FAILED",
+                        mx   if mx   is not None else "FAILED",
+                        mean if mean is not None else "FAILED",
+                        std  if std  is not None else "FAILED",
+                        ok_c, total_n, pct,
+                    ])
+            print(f"\n  ✅ Saved to {C_PATH}{path}{C_END}")
+        except OSError as exc:
+            print(f"\n  ⚠️  Couldn't write CSV: {exc}")
 
     input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")

@@ -55,6 +55,7 @@ from maze_modes import (
     run_duel,
     run_race,
     run_benchmark,
+    run_multi_stats,
     save_maze,
     load_maze,
 )
@@ -331,7 +332,7 @@ def _compact_menu(
     print(
         f"  16.🏆Benchmark  17.📚Tutorial"
         f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
-        f"  20.{C_RACE}🏎 Race{C_END}"
+        f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats"
     )
     print(
         f"     🌿 Terrain: {terrain_lbl}"
@@ -422,6 +423,7 @@ def _main_loop() -> None:
             print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
             print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
             print(f"  20. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
+            print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
@@ -436,7 +438,7 @@ def _main_loop() -> None:
             )
 
         _max_algo = max(int(s.key) for s in _REGISTRY)
-        choice = input(f"Choose an option (0–{max(20, _max_algo)}): ").strip()
+        choice = input(f"Choose an option (0–{max(21, _max_algo)}): ").strip()
 
         if choice == "0":
             print("\nGoodbye! 🚀\n")
@@ -448,6 +450,11 @@ def _main_loop() -> None:
 
         elif choice == "17":
             show_tutorial()
+            continue
+
+        elif choice == "21":
+            run_multi_stats(dispatch_fn=_dispatch_algorithm)
+            flush_stdin()
             continue
 
         elif choice == "18":
