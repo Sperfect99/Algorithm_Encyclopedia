@@ -28,7 +28,7 @@ from core.graph        import manhattan_distance
 from ui.theme          import *                           # noqa: F401,F403
 from ui.terminal_utils import (
     clear_screen, _strip_ansi, _visual_width, _center_ansi,
-    _check_terminal_size, _term_width, flush_stdin,
+    _check_terminal_size, _term_width, _term_height, flush_stdin,
 )
 ansi_enable_windows()
 
@@ -178,35 +178,68 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
         4: "medium", 5: "medium", 6: "large",  7:  "large",
         8: "huge",   9: "huge",  10: "massive",
     }
+
+    tw = _term_width()
+    th = _term_height()
+
+    # Which levels actually fit right now — a maze needs at least maze_cols
+    # terminal columns and maze_rows+5 rows (legend + HUD + breathing room).
+    max_level = max(
+        (lvl for lvl, (r, c) in MAZE_SIZES.items()
+         if c <= tw and r + 5 <= th),
+        default=0,
+    )
+
     print("Select Maze Complexity Level:\n")
     for lvl, (r, c) in MAZE_SIZES.items():
         label     = _SIZE_LABELS[lvl]
         race_note = ""
         if c * 2 + 7 > 120:
             race_note = f"  {C_RACE}(Race Mode needs ≥{c*2+7} cols){C_END}"
-        print(f"  {lvl:>2}  →  {r:>2} × {c:<3} grid  ({label}){race_note}")
+        if lvl > max_level:
+            print(f"  {C_DIM}{lvl:>2}  →  {r:>2} × {c:<3} grid  (needs {c}×{r+5} terminal){C_END}")
+        else:
+            print(f"  {lvl:>2}  →  {r:>2} × {c:<3} grid  ({label}){race_note}")
+
+    if max_level < 10:
+        print(
+            f"\n  {C_BACK}⚠  Levels {max_level + 1}–10 need a larger terminal."
+            f"  Resize to unlock them.{C_END}"
+        )
 
     print()
     while True:
-        raw = input("Enter level (0-10) or [L] load a saved maze: ").strip()
+        raw = input(f"Enter level (0-{max_level}) or [L] load a saved maze: ").strip()
         if raw.lower() in {'l', 'load'}:
             loaded = load_maze()
             if loaded:
                 maze, terrain_active = loaded
-                delay, skip_frames   = _prompt_speed()
+                l_rows, l_cols = len(maze), len(maze[0])
+                if l_cols > tw or l_rows + 5 > th:
+                    print(
+                        f"\n  {C_BACK}⚠  This maze ({l_rows}×{l_cols}) may be wider"
+                        f" than your terminal ({tw}×{th}).{C_END}"
+                        f"\n  Resize before running if it looks off."
+                    )
+                delay, skip_frames = _prompt_speed()
                 return maze, delay, skip_frames, terrain_active
-            # cancelled — loop back and show the prompt again
             continue
         try:
             comp = int(raw)
-            if 0 <= comp <= 10:
+            if 0 <= comp <= max_level:
                 break
-            print("  Please enter 0–10 or L.")
+            elif 0 <= comp <= 10:
+                print(
+                    f"  Level {comp} needs a {MAZE_SIZES[comp][1]}×"
+                    f"{MAZE_SIZES[comp][0]+5} terminal."
+                    f"  Max available now: {max_level}."
+                )
+            else:
+                print(f"  Please enter 0–{max_level} or L.")
         except ValueError:
-            print("  Invalid — enter a number (0–10) or L to load a file.")
+            print(f"  Invalid — enter a number (0–{max_level}) or L to load a file.")
 
     maze_rows, maze_cols = MAZE_SIZES[comp]
-    _check_terminal_size(maze_rows, maze_cols)
 
     delay, skip_frames = _prompt_speed()
 
@@ -232,6 +265,81 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
 
     return maze, delay, skip_frames, terrain_active
 
+
+
+# Full menu needs ~40 terminal lines. Below that, the 2-column compact layout
+# kicks in — all 20 options stay visible, just without section headers.
+_FULL_MENU_H: int = 41
+
+
+def _compact_menu(
+    W:              int,
+    rows:           int,
+    cols:           int,
+    speed_lbl:      str,
+    terrain_lbl:    str,
+    fog_lbl:        str,
+    hyp_lbl:        str,
+    terrain_active: bool,
+    fog_mode:       bool,
+    hypothesis_mode: bool,
+) -> None:
+    """2-column algorithm grid for short terminals.
+
+    All 20 options fit in ~18 lines. Nothing hidden, nothing paginated.
+    ★ = cost or hop optimal   [PQ✦] = priority queue inspector active
+    """
+    def _pad(text: str, width: int) -> str:
+        # Pad ANSI-aware — measures visual width, not raw string length
+        return text + " " * max(0, width - _visual_width(_strip_ansi(text)))
+
+    specs = list(_REGISTRY)
+    col1  = specs[:8]    # algorithms 1–8
+    col2  = specs[8:]    # algorithms 9–15
+
+    print("\n" + "═" * W)
+    print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
+    print("═" * W)
+    print(
+        f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
+        f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
+        f"  |  Terrain: {terrain_lbl}"
+        f"  |  Fog: {fog_lbl}"
+    )
+    print("─" * W)
+
+    for i, s1 in enumerate(col1):
+        star1 = "★" if (s1.cost_optimal or s1.hop_optimal) else " "
+        pq1   = " [PQ✦]" if s1.pq_inspector else ""
+        name1 = s1.display_name[:17]
+        left  = f"  {s1.key:>2}. {C_START}{name1:<17}{C_END} {star1}{pq1}"
+
+        if i < len(col2):
+            s2    = col2[i]
+            star2 = "★" if (s2.cost_optimal or s2.hop_optimal) else " "
+            pq2   = " [PQ✦]" if s2.pq_inspector else ""
+            name2 = s2.display_name[:17]
+            right = f"  {s2.key:>2}. {C_START}{name2:<17}{C_END} {star2}{pq2}"
+        else:
+            right = f"  {C_DIM}[h]heatmap  [a]utopsy  [d]uel  ENTER=done{C_END}"
+
+        print(_pad(left, 46) + right)
+
+    print("─" * W)
+
+    t_on = terrain_active
+    print(
+        f"  16.🏆Benchmark  17.📚Tutorial"
+        f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
+        f"  20.{C_RACE}🏎 Race{C_END}"
+    )
+    print(
+        f"     🌿 Terrain: {terrain_lbl}"
+        f"   {C_BIGO}▲ Big-O HUD{C_END} always on"
+        f"   {C_PQ}🗂 PQ: A* / Dijkstra / Greedy{C_END}"
+    )
+    print("─" * W)
+    print("  0. Exit")
 
 
 # --- MAIN LOOP ---
@@ -272,39 +380,60 @@ def _main_loop() -> None:
             "Custom",
         )
 
-        W = _term_width()
-        print("\n" + "═" * W)
-        print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
-        print("═" * W)
-        print(
-            f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
-            f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
-            f"  |  Terrain: {terrain_lbl}"
-            f"  |  Fog: {fog_lbl}"
+        W  = _term_width()
+        TH = _term_height()
+
+        # Soft warning — shown as one line in the menu header if the terminal
+        # is on the small side. Re-checked every iteration so a resize is
+        # picked up automatically on the next keypress.
+        _size_warn = (
+            f"  {C_BACK}⚠  Small terminal ({W}×{TH}) — resize for larger mazes{C_END}"
+            if W < 80 or TH < 30 else ""
         )
-        print()
 
-        for _section_name, _specs in _MENU_SECTIONS.items():
-            _bar = "─" * max(0, 49 - len(_section_name))
-            print(f"  ─── {_section_name} {_bar}")
-            for _sp in _specs:
-                _pq = " [PQ✦]" if _sp.pq_inspector else ""
-                print(f"  {_sp.key:>2}. {_sp.display_name:<20} ({_sp.menu_note}){_pq}")
+        if TH >= _FULL_MENU_H:
+            # Full layout — section headers, descriptions, everything
+            print("\n" + "═" * W)
+            print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
+            print("═" * W)
+            if _size_warn:
+                print(_size_warn)
+            print(
+                f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
+                f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
+                f"  |  Terrain: {terrain_lbl}"
+                f"  |  Fog: {fog_lbl}"
+            )
+            print()
 
-        print("  ─── V5 Post-Run Modes ───────────────────────────────────")
-        print("  (After each run: [h]eatmap  [a]utopsy  [d]uel  ENTER=done)")
+            for _section_name, _specs in _MENU_SECTIONS.items():
+                _bar = "─" * max(0, 49 - len(_section_name))
+                print(f"  ─── {_section_name} {_bar}")
+                for _sp in _specs:
+                    _pq = " [PQ✦]" if _sp.pq_inspector else ""
+                    print(f"  {_sp.key:>2}. {_sp.display_name:<20} ({_sp.menu_note}){_pq}")
 
-        print("  ─── System ──────────────────────────────────────────────")
-        print("  16. 🏆  Run Benchmark   (all algorithms at once)")
-        print("  17. 📚  Tutorial        (data structures & complexity)")
-        print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
-        print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
-        print(f"  20. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
-        print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
-        print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
-        print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
-        print("  0.  Exit")
-        print("─" * W)
+            print("  ─── V5 Post-Run Modes ───────────────────────────────────")
+            print("  (After each run: [h]eatmap  [a]utopsy  [d]uel  ENTER=done)")
+
+            print("  ─── System ──────────────────────────────────────────────")
+            print("  16. 🏆  Run Benchmark   (all algorithms at once)")
+            print("  17. 📚  Tutorial        (data structures & complexity)")
+            print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
+            print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
+            print(f"  20. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
+            print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
+            print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
+            print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
+            print("  0.  Exit")
+            print("─" * W)
+        else:
+            # Compact 2-column layout — all 20 options, ~18 lines total
+            _compact_menu(
+                W, rows, cols,
+                speed_lbl, terrain_lbl, fog_lbl, hyp_lbl,
+                terrain_active, fog_mode, hypothesis_mode,
+            )
 
         _max_algo = max(int(s.key) for s in _REGISTRY)
         choice = input(f"Choose an option (0–{max(20, _max_algo)}): ").strip()
