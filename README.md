@@ -246,21 +246,21 @@ The core visualiser is **complete and stable**. Active development continues.
 
 *Analysis & data*
 - [x] **Benchmark CSV export** — after a benchmark run, optionally save results to `benchmark_results.csv` so you can open them in Excel/Python/Sheets and build your own charts
-- [ ] **Multi-run statistics** — run each algorithm N times across different mazes and report mean/min/max; a single benchmark is random, 20 runs give a statistically meaningful picture
+- [x] **Multi-run statistics** — run each algorithm N times across different mazes and report mean/min/max; a single benchmark is random, 20 runs give a statistically meaningful picture
 - [x] **ASCII bar chart** — visual step-count comparison directly in the terminal after Benchmark, using block characters, no external libraries
 
 *New algorithms*
 - [ ] **Bidirectional A\*** — the cost-aware version of the Bidirectional BFS already in the suite
-- [ ] Additional maze generators — Kruskal's and Prim's alongside the existing DFS hybrid (different structural properties, worth comparing)
+- [x] Additional maze generators — Kruskal's and Prim's alongside the existing DFS hybrid (different structural properties, worth comparing)
 - [ ] MAPF: support more than 3 agents
 
 *Extensibility*
-- [ ] **Custom algorithm plugin system** — a `custom/` folder with a minimal `solve()` template; drop a file in, add one entry to the registry, and it appears in the menu automatically. The architecture already supports this — just needs the folder convention and a documented template
+- [x] **Custom algorithm plugin system** — a `custom/` folder with a minimal `solve()` template; drop a file in, add one entry to the registry, and it appears in the menu automatically. The architecture already supports this — just needs the folder convention and a documented template
 - [x] **Maze import/export** — save a specific maze to disk and reload it later; currently every maze is randomly generated and lost when you exit
 - [ ] **Run replay from file** — save a full Autopsy recording as JSON and load it in a later session; currently recordings are lost on exit
 
 *Visualisation*
-- [ ] **Algorithm family tree** — a static diagram in the Tutorial showing how the algorithms relate to each other (BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.)
+- [x] **Algorithm family tree** — a static diagram in the Tutorial showing how the algorithms relate to each other (BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.)
 - [ ] Pursuit: dynamic wall perturbation as a toggleable mode
 
 ---
