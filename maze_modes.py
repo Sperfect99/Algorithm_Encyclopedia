@@ -43,56 +43,47 @@ def _save_benchmark_export(
     results:        list[tuple[str, RunResult]],
     maze:           list[list[int | str]],
     terrain_active: bool,
+    generator:      str = "dfs",
 ) -> tuple[str, str]:
-    """Write results to CSV and maze to JSON, both under benchmark_exports/.
+    """Write benchmark results to CSV and the maze to JSON, both timestamped.
 
-    Filenames include a timestamp and complexity level so runs don't overwrite
-    each other and you can tell at a glance what maze each one used.
+    CSV includes full context: complexity, generator, rows, cols, terrain.
     Returns (csv_path, maze_path).
     """
     from maze_genV4 import MAZE_SIZES
 
     rows, cols = len(maze), len(maze[0])
-
-    # Reverse-lookup complexity from maze dimensions — works because
-    # generate_maze() always produces the exact sizes in MAZE_SIZES.
     complexity = next(
         (k for k, (r, c) in MAZE_SIZES.items() if r == rows and c == cols),
         0,
     )
 
     os.makedirs(_EXPORT_DIR, exist_ok=True)
-
-    stamp    = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    base     = f"{stamp}_c{complexity}"
+    stamp     = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    base      = f"{stamp}_c{complexity}"
     csv_path  = os.path.join(_EXPORT_DIR, f"{base}.csv")
     maze_path = os.path.join(_EXPORT_DIR, f"{base}.maze")
 
-    # CSV — one row per algorithm, sorted by steps (same order as the table)
+    terrain_s = "true" if terrain_active else "false"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["algorithm", "steps", "time_ms", "path_len", "path_cost", "efficiency_pct"])
+        w.writerow([
+            "complexity", "generator", "rows", "cols", "terrain",
+            "algorithm", "steps", "time_ms", "path_len", "path_cost", "efficiency_pct",
+        ])
         for name, r in results:
             if r.steps == float("inf"):
-                w.writerow([name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
+                w.writerow([complexity, generator, rows, cols, terrain_s,
+                            name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
             else:
                 eff = f"{r.path_len / r.steps * 100:.1f}" if r.steps > 0 else "0.0"
-                w.writerow([
-                    name,
-                    int(r.steps),
-                    f"{r.compute_time * 1000:.2f}",
-                    r.path_len,
-                    r.path_cost,
-                    eff,
-                ])
+                w.writerow([complexity, generator, rows, cols, terrain_s,
+                            name, int(r.steps), f"{r.compute_time * 1000:.2f}",
+                            r.path_len, r.path_cost, eff])
 
-    # Maze JSON — grid + metadata so you can reload it later
     maze_data = {
-        "complexity":  complexity,
-        "rows":        rows,
-        "cols":        cols,
-        "terrain":     terrain_active,
-        "grid":        maze,
+        "complexity": complexity, "rows": rows, "cols": cols,
+        "terrain": terrain_active, "generator": generator, "grid": maze,
     }
     with open(maze_path, "w", encoding="utf-8") as f:
         json.dump(maze_data, f, separators=(",", ":"))
@@ -105,6 +96,7 @@ def _save_benchmark_export(
 def save_maze(
     maze:           list[list[int | str]],
     terrain_active: bool,
+    generator:      str = "dfs",
 ) -> str | None:
     """Dump the current maze to saved_mazes/ as a .maze JSON file.
 
@@ -132,6 +124,7 @@ def save_maze(
                     "rows":       rows,
                     "cols":       cols,
                     "terrain":    terrain_active,
+                    "generator":  generator,
                     "grid":       maze,
                 },
                 f,
@@ -143,9 +136,9 @@ def save_maze(
         return None
 
 
-def load_maze() -> tuple[list[list[int | str]], bool] | None:
+def load_maze() -> tuple[list[list[int | str]], bool, str] | None:
     """List all .maze files from both saved_mazes/ and benchmark_exports/,
-    let the user pick one, and return (maze, terrain_active).
+    let the user pick one, and return (maze, terrain_active, generator).
 
     Searches both folders so you can reload a manually saved maze or the
     exact maze a benchmark ran on. Returns None if cancelled or no files found.
@@ -162,11 +155,12 @@ def load_maze() -> tuple[list[list[int | str]], bool] | None:
                 with open(path, encoding="utf-8") as f:
                     meta = json.load(f)
                 terrain_s = "terrain ON" if meta.get("terrain") else "terrain OFF"
+                gen_s     = meta.get("generator", "dfs")
                 label = (
                     f"  [{tag}]  {fname:<42}"
                     f"  c{meta.get('complexity', '?')}"
                     f"  {meta.get('rows', '?')}×{meta.get('cols', '?')}"
-                    f"  {terrain_s}"
+                    f"  {gen_s}  {terrain_s}"
                 )
                 entries.append((label, path, meta))
             except (OSError, json.JSONDecodeError):
@@ -206,9 +200,10 @@ def load_maze() -> tuple[list[list[int | str]], bool] | None:
                 for row in data["grid"]
             ]
             terrain_active = bool(data.get("terrain", False))
+            generator      = data.get("generator", "dfs")
             rows, cols     = len(maze), len(maze[0])
-            print(f"\n  ✅ Loaded  ({rows}×{cols})")
-            return maze, terrain_active
+            print(f"\n  ✅ Loaded  ({rows}×{cols}, {generator})")
+            return maze, terrain_active, generator
 
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             print(f"  ⚠️  Failed to read file: {exc}")
@@ -643,6 +638,7 @@ def run_benchmark(
     skip_frames:   int,
     terrain_active: bool,
     *,
+    generator:   str = "dfs",
     dispatch_fn: Callable,
 ) -> None:
     """Run all algorithms on the current maze and print a comparison table."""
@@ -726,7 +722,7 @@ def run_benchmark(
 
     if save_ans in {"y", "yes"}:
         try:
-            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active)
+            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active, generator)
             print(f"\n  ✅ Saved to {C_PATH}{_EXPORT_DIR}/{C_END}")
             print(f"     {csv_path}")
             print(f"     {maze_path}")
@@ -737,7 +733,7 @@ def run_benchmark(
 
 # --- MULTI-RUN STATISTICS ---
 
-def run_multi_stats(dispatch_fn: Callable) -> None:
+def run_multi_stats(dispatch_fn: Callable, generator: str = "dfs") -> None:
     """Run selected algorithms N times on fresh mazes and report statistics.
 
     Each run generates a new maze so the results reflect performance across
@@ -866,7 +862,7 @@ def run_multi_stats(dispatch_fn: Callable) -> None:
 
         for run_idx in range(N):
             comp = next(comp_seq)
-            maze = generate_maze(comp)
+            maze = generate_maze(comp, generator)
 
             # run headless — we only want the final result
             result_steps = float('inf')

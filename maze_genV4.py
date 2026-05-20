@@ -1,9 +1,17 @@
 """
-maze_genV4.py — procedural maze generator.
+maze_genV4.py — procedural maze generators.
 
-Hybrid DFS / Prim's. Low complexity → long snaking corridors.
-High complexity → dense branches, dead ends, and loops.
-Complexity >= 5 punches extra holes in walls to create braiding.
+Three algorithms, each with a different character:
+
+  dfs      Hybrid DFS/Prim's. Long snaking corridors at low complexity,
+           denser branching higher up. The default.
+
+  kruskal  Randomised Kruskal's (edge-shuffle + union-find). Produces
+           many short dead ends and lots of crossroads. Wall-following
+           algorithms struggle here more than on DFS mazes.
+
+  prim     Randomised Prim's. Grows outward from (0,0). Shorter corridors
+           than DFS, more branchy than Kruskal's — somewhere in between.
 """
 from __future__ import annotations
 
@@ -17,20 +25,21 @@ MAZE_SIZES: dict[int, tuple[int, int]] = {
     8: (41, 101), 9: (51, 131), 10: (61, 151),
 }
 
+GENERATORS: dict[str, str] = {
+    "dfs":     "DFS/Prim's  — long corridors, natural feel",
+    "kruskal": "Kruskal's   — many crossroads, hard for wall-followers",
+    "prim":    "Prim's      — grows from origin, medium density",
+}
+_GEN_CYCLE = ["dfs", "kruskal", "prim"]
 
-def generate_maze(complexity: int) -> list[list[int | str]]:
-    """Generate a maze at the given complexity level (0-10).
 
-    1 = wall, 0 = open, 'S' = start, 'E' = end.
+def _generate_dfs(rows: int, cols: int, comp: int) -> list[list[int | str]]:
+    """DFS/Prim's hybrid — original algorithm.
+
+    branching_factor controls how often we pick a random stack entry instead
+    of the top. 0.0 = pure DFS long corridors, ~0.9 = Prim's-like behaviour.
     """
-    comp = max(0, min(10, int(complexity)))
-    rows, cols = MAZE_SIZES[comp]
-
-    # branching_factor controls the DFS vs Prim's mix.
-    # 0.0 → pure DFS (long corridors), ~0.9 → Prim's-style (many dead ends)
-    # Divided by 11 not 10 so the max is ~0.909, never fully random.
     branching_factor: float = comp / 11.0
-
     maze: list[list[int | str]] = [[1] * cols for _ in range(rows)]
     stack: list[tuple[int, int]] = [(0, 0)]
     maze[0][0] = 0
@@ -57,22 +66,117 @@ def generate_maze(complexity: int) -> list[list[int | str]]:
 
         if not moved:
             # Swap-and-pop: O(1) removal instead of O(N) list shift.
-            # On a complexity-10 maze the stack can hold thousands of entries,
-            # so this matters — without it generation becomes O(V^2).
             last_idx = len(stack) - 1
             if current_idx != last_idx:
                 stack[current_idx] = stack[last_idx]
             stack.pop()
 
-    # Braiding: punch holes in walls to create loops at higher complexities.
-    # Only connects cells that were already corridor-adjacent (not random walls),
-    # so the result looks natural rather than like random missing blocks.
-    if comp >= 5:
+    return maze
+
+
+def _generate_kruskal(rows: int, cols: int) -> list[list[int | str]]:
+    """Randomised Kruskal's — builds a spanning tree by shuffling wall edges.
+
+    Passage cells start isolated. Edges between adjacent cells are shuffled
+    and accepted if they connect two different components (union-find).
+    Result: perfect maze with many short dead ends and frequent crossroads.
+    """
+    maze = [[1] * cols for _ in range(rows)]
+    cells = [(r, c) for r in range(0, rows, 2) for c in range(0, cols, 2)]
+    for r, c in cells:
+        maze[r][c] = 0
+
+    parent = {cell: cell for cell in cells}
+
+    def find(x: tuple) -> tuple:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: tuple, b: tuple) -> bool:
+        pa, pb = find(a), find(b)
+        if pa == pb:
+            return False
+        parent[pa] = pb
+        return True
+
+    edges = []
+    for r, c in cells:
+        if c + 2 < cols:
+            edges.append(((r, c), (r, c + 2), (r, c + 1)))
+        if r + 2 < rows:
+            edges.append(((r, c), (r + 2, c), (r + 1, c)))
+
+    random.shuffle(edges)
+    for cell_a, cell_b, wall in edges:
+        if union(cell_a, cell_b):
+            maze[wall[0]][wall[1]] = 0
+
+    return maze
+
+
+def _generate_prim(rows: int, cols: int) -> list[list[int | str]]:
+    """Randomised Prim's — grows outward from (0,0) picking a random frontier.
+
+    Shorter corridors than DFS, more branching than Kruskal's.
+    """
+    maze = [[1] * cols for _ in range(rows)]
+    maze[0][0] = 0
+    in_maze: set[tuple[int, int]] = {(0, 0)}
+    frontier: list[tuple[int, int, int, int]] = []
+
+    def _add_frontier(r: int, c: int) -> None:
+        for dr, dc in ((0, 2), (2, 0), (0, -2), (-2, 0)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and (nr, nc) not in in_maze:
+                frontier.append((nr, nc, r + dr // 2, c + dc // 2))
+
+    _add_frontier(0, 0)
+
+    while frontier:
+        idx = random.randrange(len(frontier))
+        nr, nc, wr, wc = frontier[idx]
+        frontier[idx] = frontier[-1]
+        frontier.pop()
+
+        if (nr, nc) in in_maze:
+            continue
+
+        maze[nr][nc] = 0
+        maze[wr][wc] = 0
+        in_maze.add((nr, nc))
+        _add_frontier(nr, nc)
+
+    return maze
+
+
+def generate_maze(
+    complexity: int,
+    generator:  str = "dfs",
+) -> list[list[int | str]]:
+    """Generate a maze at the given complexity level using the chosen algorithm.
+
+    complexity  0-10 (clamped). Controls size via MAZE_SIZES.
+    generator   "dfs" | "kruskal" | "prim" — defaults to dfs.
+    """
+    comp = max(0, min(10, int(complexity)))
+    rows, cols = MAZE_SIZES[comp]
+    gen = generator.lower().strip()
+
+    if gen == "kruskal":
+        maze = _generate_kruskal(rows, cols)
+    elif gen == "prim":
+        maze = _generate_prim(rows, cols)
+    else:
+        maze = _generate_dfs(rows, cols, comp)
+
+    # Braiding only for DFS — Kruskal and Prim already vary naturally.
+    if gen == "dfs" and comp >= 5:
         holes_to_punch = (comp * rows * cols) // 100
         for _ in range(holes_to_punch):
             rr = random.randint(1, rows - 2)
             cc = random.randint(1, cols - 2)
-
             if maze[rr][cc] == 1:
                 vertical_corridor = (
                     maze[rr - 1][cc] == 0 and maze[rr + 1][cc] == 0
@@ -136,6 +240,7 @@ if __name__ == "__main__":
     except ValueError:
         level = 3
 
-    m = generate_maze(level)
+    gen = input("Generator (dfs/kruskal/prim) [dfs]: ").strip() or "dfs"
+    m   = generate_maze(level, gen)
     draw_maze(m)
-    print(f"\nGenerated maze at complexity {level} ({len(m)}x{len(m[0])})")
+    print(f"\n{gen} maze at complexity {level} ({len(m)}×{len(m[0])})")

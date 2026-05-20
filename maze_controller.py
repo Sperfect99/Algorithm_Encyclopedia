@@ -20,7 +20,7 @@ import time
 from itertools import zip_longest
 from typing import Callable
 
-from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES
+from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES, _GEN_CYCLE
 
 from core.types        import RunResult, _StepRecord
 from core.grid         import terrain_cost, DIRECTIONS, PASSABLE
@@ -168,17 +168,36 @@ def _prompt_speed() -> tuple[float, int]:
         print("  Please enter 1, 2, 3, or 4.")
 
 
-def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
-    """Prompt for complexity/speed/terrain and return a freshly generated maze.
+def setup_new_maze(
+    generator_type: str = "dfs",
+) -> tuple[list[list[int | str]], float, int, bool, str]:
+    """Prompt for generator/complexity/speed/terrain and return a freshly generated maze.
 
-    Returns (maze, delay, skip_frames, terrain_active).
+    Returns (maze, delay, skip_frames, terrain_active, generator_type).
     """
+    from maze_genV4 import GENERATORS, _GEN_CYCLE
+
     clear_screen()
     _SIZE_LABELS = {
         0: "tiny",   1: "tiny",   2: "small",  3:  "small",
         4: "medium", 5: "medium", 6: "large",  7:  "large",
         8: "huge",   9: "huge",  10: "massive",
     }
+
+    # --- generator selection ---
+    print("Select Maze Generator:\n")
+    for i, key in enumerate(_GEN_CYCLE, 1):
+        default = "  (default)" if key == generator_type else ""
+        print(f"  {i})  {GENERATORS[key]}{default}")
+    print()
+    while True:
+        raw = input(f"  Choice (1-{len(_GEN_CYCLE)}) or ENTER to keep [{generator_type.upper()}]: ").strip()
+        if raw == "":
+            break
+        if raw.isdigit() and 1 <= int(raw) <= len(_GEN_CYCLE):
+            generator_type = _GEN_CYCLE[int(raw) - 1]
+            break
+        print(f"  Enter 1–{len(_GEN_CYCLE)} or ENTER.")
 
     tw = _term_width()
     th = _term_height()
@@ -191,7 +210,7 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
         default=0,
     )
 
-    print("Select Maze Complexity Level:\n")
+    print(f"\nSelect Maze Complexity Level:  [{generator_type.upper()}]\n")
     for lvl, (r, c) in MAZE_SIZES.items():
         label     = _SIZE_LABELS[lvl]
         race_note = ""
@@ -214,7 +233,7 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
         if raw.lower() in {'l', 'load'}:
             loaded = load_maze()
             if loaded:
-                maze, terrain_active = loaded
+                maze, terrain_active, loaded_gen = loaded
                 l_rows, l_cols = len(maze), len(maze[0])
                 if l_cols > tw or l_rows + 5 > th:
                     print(
@@ -223,7 +242,7 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
                         f"\n  Resize before running if it looks off."
                     )
                 delay, skip_frames = _prompt_speed()
-                return maze, delay, skip_frames, terrain_active
+                return maze, delay, skip_frames, terrain_active, generator_type
             continue
         try:
             comp = int(raw)
@@ -260,11 +279,11 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
             terrain_active = True
 
     print("\n⏳ Generating maze… Please wait!")
-    maze = generate_maze(comp)
+    maze = generate_maze(comp, generator_type)
     if terrain_active:
         add_terrain(maze)
 
-    return maze, delay, skip_frames, terrain_active
+    return maze, delay, skip_frames, terrain_active, generator_type
 
 
 
@@ -378,6 +397,7 @@ def _compact_menu(
     fog_mode:       bool,
     hypothesis_mode: bool,
     plugins:        dict | None = None,
+    gen_lbl:        str = "",
 ) -> None:
     """2-column algorithm grid for short terminals.
 
@@ -400,6 +420,7 @@ def _compact_menu(
         f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
         f"  |  Terrain: {terrain_lbl}"
         f"  |  Fog: {fog_lbl}"
+        f"  |  Gen: {gen_lbl}"
     )
     print("─" * W)
 
@@ -426,7 +447,7 @@ def _compact_menu(
     print(
         f"  16.🏆Benchmark  17.📚Tutorial"
         f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
-        f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats"
+        f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats  22.🗺️Gen:{gen_lbl}"
     )
     print(
         f"     🌿 Terrain: {terrain_lbl}"
@@ -455,7 +476,9 @@ def _main_loop() -> None:
     """The actual interactive session. Extracted from main() so the exception
     handler in main() stays clean."""
 
-    my_maze, delay, skip_frames, terrain_active = setup_new_maze()
+    generator_type: str = "dfs"   # cycles via option 22: dfs → kruskal → prim
+
+    my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
 
     # Load custom plugins once per session. _discover_plugins() also creates
     # the custom/ folder if it's missing so it's there for next time.
@@ -477,6 +500,7 @@ def _main_loop() -> None:
         rows, cols  = len(my_maze), len(my_maze[0])
         fog_lbl     = f"{C_BACK}ON {C_END}" if fog_mode      else f"{C_DOT}OFF{C_END}"
         terrain_lbl = f"{C_MUD}ON {C_END}"  if terrain_active else f"{C_DOT}OFF{C_END}"
+        gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
         hyp_lbl     = (
             f"{C_HYP}ON{C_END}  Score: {C_HYP}{hyp_pts}/{hyp_max_pts} pts{C_END}"
             if hypothesis_mode else f"{C_DOT}OFF{C_END}"
@@ -511,6 +535,7 @@ def _main_loop() -> None:
                 f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
                 f"  |  Terrain: {terrain_lbl}"
                 f"  |  Fog: {fog_lbl}"
+                f"  |  Gen: {gen_lbl}"
             )
             print()
 
@@ -531,6 +556,7 @@ def _main_loop() -> None:
             print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
             print(f"  20. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
             print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
+            print(f"  22. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
@@ -547,6 +573,7 @@ def _main_loop() -> None:
                 speed_lbl, terrain_lbl, fog_lbl, hyp_lbl,
                 terrain_active, fog_mode, hypothesis_mode,
                 _plugins,
+                gen_lbl,
             )
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
@@ -558,15 +585,21 @@ def _main_loop() -> None:
             break
 
         elif choice == "16":
-            run_benchmark(my_maze, delay, skip_frames, terrain_active, dispatch_fn=_dispatch_algorithm)
+            run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
 
         elif choice == "17":
             show_tutorial()
             continue
 
+        elif choice == "22":
+            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(generator_type) + 1) % len(_GEN_CYCLE)]
+            print(f"\n  🗺️  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
+            time.sleep(0.7)
+            continue
+
         elif choice == "21":
-            run_multi_stats(dispatch_fn=_dispatch_algorithm)
+            run_multi_stats(dispatch_fn=_dispatch_algorithm, generator=generator_type)
             flush_stdin()
             continue
 
@@ -727,7 +760,7 @@ def _main_loop() -> None:
         while True:
             ans = input("\n  [ENTER/n] keep   [y] new maze   [s] save maze: ").strip().lower()
             if ans in {'y', 'yes'}:
-                my_maze, delay, skip_frames, terrain_active = setup_new_maze()
+                my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
                 recording       = []
                 m_copy          = []
                 visit_count     = {}
@@ -740,7 +773,7 @@ def _main_loop() -> None:
                     )
                 break
             elif ans in {'s', 'save'}:
-                path = save_maze(my_maze, terrain_active)
+                path = save_maze(my_maze, terrain_active, generator_type)
                 if path:
                     print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
                 time.sleep(0.8)
