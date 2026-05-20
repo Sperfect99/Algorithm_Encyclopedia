@@ -268,7 +268,100 @@ def setup_new_maze() -> tuple[list[list[int | str]], float, int, bool]:
 
 
 
-# Full menu needs ~40 terminal lines. Below that, the 2-column compact layout
+# --- CUSTOM PLUGIN SYSTEM ---
+
+_CUSTOM_STEP_CAP: int = 200_000   # stops infinite loops in custom algos
+
+
+def _discover_plugins() -> dict[str, dict]:
+    """Scan custom/ for .py files that expose a solve() function.
+
+    Creates the folder if it doesn't exist so first-time users don't
+    get a confusing FileNotFoundError. Returns a dict mapping letter keys
+    ('a', 'b', ...) to plugin info dicts.
+    """
+    import importlib.util
+
+    custom_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom")
+    os.makedirs(custom_dir, exist_ok=True)
+
+    plugins: dict[str, dict] = {}
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    idx     = 0
+
+    for fname in sorted(os.listdir(custom_dir)):
+        if fname.startswith("_") or not fname.endswith(".py"):
+            continue
+        if idx >= len(letters):
+            print(f"  ⚠️  custom/: more than 26 plugins — only first 26 loaded")
+            break
+
+        path = os.path.join(custom_dir, fname)
+        try:
+            spec_mod = importlib.util.spec_from_file_location(
+                f"custom.{fname[:-3]}", path
+            )
+            mod = importlib.util.module_from_spec(spec_mod)
+            spec_mod.loader.exec_module(mod)
+
+            if not hasattr(mod, "solve") or not callable(mod.solve):
+                print(f"  ⚠️  custom/{fname}: no solve() — skipped")
+                continue
+
+            info  = getattr(mod, "PLUGIN_INFO", {})
+            name  = info.get("name", fname[:-3].replace("_", " ").title())
+            note  = info.get("note", "custom algorithm")
+            key   = letters[idx]
+
+            plugins[key] = {"name": name, "note": note, "solve": mod.solve, "file": fname}
+            idx += 1
+
+        except Exception as exc:
+            print(f"  ⚠️  custom/{fname}: failed to load ({exc}) — skipped")
+
+    return plugins
+
+
+def _make_plugin_spec(key: str, name: str, note: str) -> AlgorithmSpec:
+    """Build a minimal AlgorithmSpec for a custom plugin.
+
+    Custom plugins don't have all the metadata that built-in algorithms do,
+    so this fills in sensible defaults for the fields the UI actually reads.
+    """
+    return AlgorithmSpec(
+        key=key, module_name="", display_name=name,
+        bench_name=name[:12], section="Custom",
+        menu_note=note,
+        big_o="T:?  S:?  ▸ custom algorithm",
+        verdict="Custom algorithm — no built-in verdict.",
+        tutorial_title=name, tutorial_body="Custom algorithm.",
+    )
+
+
+def _capped_solve(solve_fn, maze, fog, visit_count):
+    """Wrap a custom solve() with a step limit.
+
+    If a plugin never yields a 'done' event the program would hang forever.
+    This catches that at 200k steps — way above any built-in algorithm on
+    any maze — and surfaces it as a failure with a clear message.
+    """
+    steps = 0
+    for state in solve_fn(maze, fog=fog, visit_count=visit_count):
+        yield state
+        if state.get("type") == "step":
+            steps += 1
+            if steps >= _CUSTOM_STEP_CAP:
+                yield {
+                    "type":    "done",
+                    "result":  RunResult(float("inf"), 0.0, 0, 0),
+                    "message": (
+                        f"⚠️  Plugin hit the {_CUSTOM_STEP_CAP:,}-step cap. "
+                        f"Check solve() for an infinite loop."
+                    ),
+                }
+                return
+        if state.get("type") == "done":
+            return
 # kicks in — all 20 options stay visible, just without section headers.
 _FULL_MENU_H: int = 41
 
@@ -284,6 +377,7 @@ def _compact_menu(
     terrain_active: bool,
     fog_mode:       bool,
     hypothesis_mode: bool,
+    plugins:        dict | None = None,
 ) -> None:
     """2-column algorithm grid for short terminals.
 
@@ -341,6 +435,9 @@ def _compact_menu(
     )
     print("─" * W)
     print("  0. Exit")
+    if plugins:
+        keys_line = "  ".join(f"[{k}] {p['name']}" for k, p in plugins.items())
+        print(f"  {C_PATH}Custom:{C_END} {keys_line}")
 
 
 # --- MAIN LOOP ---
@@ -359,6 +456,16 @@ def _main_loop() -> None:
     handler in main() stays clean."""
 
     my_maze, delay, skip_frames, terrain_active = setup_new_maze()
+
+    # Load custom plugins once per session. _discover_plugins() also creates
+    # the custom/ folder if it's missing so it's there for next time.
+    _plugins = _discover_plugins()
+    if _plugins:
+        print(
+            f"\n  {C_PATH}Loaded {len(_plugins)} custom plugin(s):"
+            f" {', '.join(p['name'] for p in _plugins.values())}{C_END}"
+        )
+        time.sleep(0.8)
 
     fog_mode:        bool                         = False
     hypothesis_mode: bool                         = False
@@ -428,6 +535,10 @@ def _main_loop() -> None:
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
             print("  0.  Exit")
+            if _plugins:
+                print("  ─── Custom Algorithms ───────────────────────────────────")
+                for key, p in _plugins.items():
+                    print(f"  {key}.  {p['name']:<20} ({p['note']})")
             print("─" * W)
         else:
             # Compact 2-column layout — all 20 options, ~18 lines total
@@ -435,10 +546,12 @@ def _main_loop() -> None:
                 W, rows, cols,
                 speed_lbl, terrain_lbl, fog_lbl, hyp_lbl,
                 terrain_active, fog_mode, hypothesis_mode,
+                _plugins,
             )
 
-        _max_algo = max(int(s.key) for s in _REGISTRY)
-        choice = input(f"Choose an option (0–{max(21, _max_algo)}): ").strip()
+        _max_algo  = max(int(s.key) for s in _REGISTRY)
+        _plug_hint = f" or {'/'.join(_plugins)}" if _plugins else ""
+        choice     = input(f"Choose an option (0–{max(21, _max_algo)}{_plug_hint}): ").strip()
 
         if choice == "0":
             print("\nGoodbye! 🚀\n")
@@ -587,6 +700,24 @@ def _main_loop() -> None:
                         print(f"  (Unrecognised — try: {prompt_opts})")
             else:
                 input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
+
+        elif choice.lower() in _plugins:
+            plugin  = _plugins[choice.lower()]
+            spec    = _make_plugin_spec(choice.lower(), plugin["name"], plugin["note"])
+            maze_copy    = [row[:] for row in my_maze]
+            visit_count  = {} if True else {}
+            fog          = set(fog if fog_mode and fog else [])
+            result = run_algorithm(
+                lambda m, fog=None, visit_count=None: _capped_solve(
+                    plugin["solve"], m, fog, visit_count
+                ),
+                maze_copy, spec, delay, skip_frames,
+                fog if fog_mode else None,
+                visit_count,
+            )
+            # post-run options (heatmap, autopsy, duel) same as built-in algos
+            m_copy      = maze_copy
+            last_result = result
 
         else:
             print("  Invalid option — please try again.")
