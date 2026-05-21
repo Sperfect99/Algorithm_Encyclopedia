@@ -235,33 +235,68 @@ The core visualiser is **complete and stable**. Active development continues.
 - MAPF module — Independent A\*, Prioritised Planning, and CBS
 - Pursuit-Evasion module — all three strategies
 - MVC refactoring — `core/`, `ui/`, `algorithms/` package structure in place
+- Benchmark CSV export, ASCII bar chart, multi-run statistics
+- Kruskal's and Prim's maze generators (option 22 cycles DFS → Kruskal → Prim)
+- Custom algorithm plugin system (`custom/` folder + `_template.py`)
+- Maze import/export with complexity, generator, and terrain metadata
+- Algorithm family tree diagram in Tutorial
 
 **Planned**
 
 *Core / stability*
 - [ ] Smoke tests for each algorithm on known mazes
-- [ ] Config file — save preferred speed, complexity, and terrain between sessions
-- [ ] Graceful degradation when terminal is too small (currently a hard warning)
+- [ ] Config file — save preferred speed, complexity, terrain, and generator between sessions
+- [ ] Graceful degradation when terminal is too small (currently a soft banner — next step is auto-adjusting)
 - [ ] Windows column-width review for Race Mode on cmd/PowerShell
+- [ ] Hot-reload sandbox — watches `custom/` for file changes and re-runs automatically without restarting
+- [ ] CLI mode flags — `--learn` for a simplified menu with just the 15 algorithms; `--help` lists all flags
 
 *Analysis & data*
-- [x] **Benchmark CSV export** — after a benchmark run, optionally save results to `benchmark_results.csv` so you can open them in Excel/Python/Sheets and build your own charts
-- [x] **Multi-run statistics** — run each algorithm N times across different mazes and report mean/min/max; a single benchmark is random, 20 runs give a statistically meaningful picture
-- [x] **ASCII bar chart** — visual step-count comparison directly in the terminal after Benchmark, using block characters, no external libraries
+- [x] **Benchmark CSV export** — saves complexity / generator / steps / path / cost / time to CSV after each benchmark run
+- [x] **Multi-run statistics** — N runs across fresh mazes, reports mean / min / max / std / success rate per algorithm
+- [x] **ASCII bar chart** — visual step-count comparison directly in the terminal after Benchmark
+- [ ] **Benchmark history viewer** — reads all CSVs from `benchmark_exports/` and shows aggregate trends across sessions
+- [ ] **Session statistics** — end-of-session summary: runs count, most-used algorithm, best efficiency seen
+- [ ] **Export maze as ASCII text** — saves the current maze as a `.txt` file for documentation or sharing
+- [ ] **Big-O regression** — runs an algorithm across complexity levels, fits a curve, reports whether it behaves as O(n), O(n log n), or O(n²)
+- [ ] **Operations count** — counts node expansions, edge relaxations, heap operations instead of milliseconds — hardware-agnostic scoring that stays consistent across machines
 
 *New algorithms*
 - [ ] **Bidirectional A\*** — the cost-aware version of the Bidirectional BFS already in the suite
-- [x] Additional maze generators — Kruskal's and Prim's alongside the existing DFS hybrid (different structural properties, worth comparing)
+- [x] Additional maze generators — Kruskal's and Prim's alongside the existing DFS hybrid; option 22 cycles between them
+- [ ] Jump Point Search — A\* accelerator for uniform grids, skips symmetric nodes
+- [ ] Theta\* (any-angle) — A\* with diagonal movement, produces more natural paths
 - [ ] MAPF: support more than 3 agents
 
 *Extensibility*
-- [x] **Custom algorithm plugin system** — a `custom/` folder with a minimal `solve()` template; drop a file in, add one entry to the registry, and it appears in the menu automatically. The architecture already supports this — just needs the folder convention and a documented template
-- [x] **Maze import/export** — save a specific maze to disk and reload it later; currently every maze is randomly generated and lost when you exit
-- [ ] **Run replay from file** — save a full Autopsy recording as JSON and load it in a later session; currently recordings are lost on exit
+- [x] **Custom algorithm plugin system** — `custom/` folder with `_template.py`; drop a file in and it appears in the menu automatically
+- [x] **Maze import/export** — saves maze to disk with complexity / generator / terrain; reload it later
+- [ ] **Run replay from file** — save a full Autopsy recording as JSON and load it in a later session
+- [ ] **Custom heuristic plugin** — write your own heuristic function for A\* and see how it affects path and step count
+- [ ] **Custom maze generator plugin** — same plugin system for generators; appears as an option in the generator cycle
 
 *Visualisation*
-- [x] **Algorithm family tree** — a static diagram in the Tutorial showing how the algorithms relate to each other (BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.)
+- [x] **Algorithm family tree** — ASCII diagram in Tutorial showing how algorithms relate: BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.
+- [ ] Side-by-side heatmaps — two heatmaps next to each other, same maze, two different algorithms
+- [ ] Maze topology analyzer — shows dead-end count, branching factor, longest corridor after generation
+- [ ] Node expansion visualizer — visit counter on each cell, particularly revealing for IDA\*
 - [ ] Pursuit: dynamic wall perturbation as a toggleable mode
+
+*Learning tools*
+- [ ] Algorithm tournament — automated round-robin across all algorithms on the same maze, leaderboard per metric
+- [ ] Maze difficulty score — a 0–100 score based on dead ends, tortuosity, and branching; shown at generation
+- [ ] Step-by-step explainer mode — each Autopsy step accompanied by a one-line explanation of why that cell was chosen
+- [ ] Pathfinding quiz mode — see a maze, predict which algorithm explores the most cells; scored with explanation
+- [ ] Code assembly quiz — algorithm lines shown shuffled; put them in the right order using numbers
+- [ ] Bug hunt mode — a broken implementation with a classic bug; run it, see the wrong path, find the line
+
+*Research tools*
+- [ ] Reproducible seed mode — saves the random seed of each maze so the same maze can be reproduced exactly
+- [ ] Algorithm parameter tuning — interactive prompt for Genetic Algorithm parameters before each run
+- [ ] Admissibility tester — runs A\* with different heuristics and checks whether each produces an optimal path
+- [ ] Dead-end density control — control dead-end count independently from complexity level
+- [ ] Complexity scaling report — one algorithm across all 11 levels; shows how runtime grows, verifying Big-O in practice
+- [ ] Weighted terrain editor — define which cells are mud manually before running, for controlled experiments
 
 ---
 
