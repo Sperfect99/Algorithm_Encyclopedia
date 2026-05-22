@@ -249,7 +249,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] Graceful degradation when terminal is too small (currently a soft banner — next step is auto-adjusting)
 - [ ] Windows column-width review for Race Mode on cmd/PowerShell
 - [ ] Hot-reload sandbox — watches `custom/` for file changes and re-runs automatically without restarting
-- [ ] CLI mode flags — `--learn` for a simplified menu with just the 15 algorithms; `--help` lists all flags
+- [x] CLI mode flags — `--learn` for a simplified menu with just the 15 algorithms; `--help` lists all flags
 
 *Analysis & data*
 - [x] **Benchmark CSV export** — saves complexity / generator / steps / path / cost / time to CSV after each benchmark run
