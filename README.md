@@ -278,13 +278,13 @@ The core visualiser is **complete and stable**. Active development continues.
 *Visualisation*
 - [x] **Algorithm family tree** — ASCII diagram in Tutorial showing how algorithms relate: BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.
 - [ ] Side-by-side heatmaps — two heatmaps next to each other, same maze, two different algorithms
-- [ ] Maze topology analyzer — shows dead-end count, branching factor, longest corridor after generation
+- [x] Maze topology analyzer — shows dead-end count, branching factor, longest corridor after generation
 - [ ] Node expansion visualizer — visit counter on each cell, particularly revealing for IDA\*
 - [ ] Pursuit: dynamic wall perturbation as a toggleable mode
 
 *Learning tools*
 - [ ] Algorithm tournament — automated round-robin across all algorithms on the same maze, leaderboard per metric
-- [ ] Maze difficulty score — a 0–100 score based on dead ends, tortuosity, and branching; shown at generation
+- [x] Maze difficulty score — a 0–100 score based on dead ends, tortuosity, and branching; shown at generation
 - [ ] Step-by-step explainer mode — each Autopsy step accompanied by a one-line explanation of why that cell was chosen
 - [ ] Pathfinding quiz mode — see a maze, predict which algorithm explores the most cells; scored with explanation
 - [ ] Code assembly quiz — algorithm lines shown shuffled; put them in the right order using numbers
