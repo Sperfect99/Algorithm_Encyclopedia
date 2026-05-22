@@ -28,6 +28,7 @@ from ui.theme          import *  # noqa: F401,F403
 from ui.terminal_utils import clear_screen, _center_ansi, _term_width, precise_sleep
 from ui.renderer       import render, render_split, CELL_RENDER
 from algorithms.registry import _ALGO_NAMES, _REGISTRY, _get_generator
+from maze_genV4 import MazeStats
 
 # These are passed to dispatch so it runs instantly with no recording
 _BENCH_DELAY: float = 0.0
@@ -45,10 +46,11 @@ def _save_benchmark_export(
     terrain_active: bool,
     generator:      str = "dfs",
     maze_diff:      int = -1,
+    stats:          MazeStats | None = None,
 ) -> tuple[str, str]:
     """Write benchmark results to CSV and the maze to JSON, both timestamped.
 
-    CSV includes full context: complexity, generator, rows, cols, terrain, maze_diff.
+    CSV includes full maze context: complexity, generator, topology stats.
     Returns (csv_path, maze_path).
     """
     from maze_genV4 import MAZE_SIZES
@@ -67,21 +69,38 @@ def _save_benchmark_export(
 
     terrain_s  = "true" if terrain_active else "false"
     diff_field = maze_diff if maze_diff >= 0 else "—"
+
+    # topology fields — blank if no stats provided
+    t_pass   = stats.passable         if stats else "—"
+    t_dead   = stats.dead_ends        if stats else "—"
+    t_deaP   = stats.dead_end_pct     if stats else "—"
+    t_junc   = stats.junctions        if stats else "—"
+    t_juncP  = stats.junction_pct     if stats else "—"
+    t_avg    = stats.avg_exits        if stats else "—"
+    t_corr   = stats.longest_corridor if stats else "—"
+    t_bfs    = stats.bfs_path         if stats else "—"
+
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
             "complexity", "generator", "rows", "cols", "terrain", "maze_diff",
+            "passable", "dead_ends", "dead_end_pct", "junctions", "junction_pct",
+            "avg_exits", "longest_corridor", "bfs_path",
             "algorithm", "steps", "time_ms", "path_len", "path_cost", "efficiency_pct",
         ])
+        maze_meta = [
+            complexity, generator, rows, cols, terrain_s, diff_field,
+            t_pass, t_dead, t_deaP, t_junc, t_juncP, t_avg, t_corr, t_bfs,
+        ]
         for name, r in results:
             if r.steps == float("inf"):
-                w.writerow([complexity, generator, rows, cols, terrain_s, diff_field,
-                            name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
+                w.writerow(maze_meta + [name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
             else:
                 eff = f"{r.path_len / r.steps * 100:.1f}" if r.steps > 0 else "0.0"
-                w.writerow([complexity, generator, rows, cols, terrain_s, diff_field,
-                            name, int(r.steps), f"{r.compute_time * 1000:.2f}",
-                            r.path_len, r.path_cost, eff])
+                w.writerow(maze_meta + [
+                    name, int(r.steps), f"{r.compute_time * 1000:.2f}",
+                    r.path_len, r.path_cost, eff,
+                ])
 
     maze_data = {
         "complexity": complexity, "rows": rows, "cols": cols,
@@ -641,8 +660,9 @@ def run_benchmark(
     skip_frames:   int,
     terrain_active: bool,
     *,
-    generator:   str = "dfs",
-    maze_diff:   int = -1,
+    generator:   str       = "dfs",
+    maze_diff:   int       = -1,
+    stats:       MazeStats | None = None,
     dispatch_fn: Callable,
 ) -> None:
     """Run all algorithms on the current maze and print a comparison table."""
@@ -726,7 +746,7 @@ def run_benchmark(
 
     if save_ans in {"y", "yes"}:
         try:
-            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active, generator, maze_diff)
+            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active, generator, maze_diff, stats)
             print(f"\n  ✅ Saved to {C_PATH}{_EXPORT_DIR}/{C_END}")
             print(f"     {csv_path}")
             print(f"     {maze_path}")

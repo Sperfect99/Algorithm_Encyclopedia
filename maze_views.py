@@ -6,12 +6,13 @@ No session state lives here — it's all passed in from the controller.
 """
 from __future__ import annotations
 from core.types        import RunResult
+from maze_genV4        import MazeStats
 from ui.theme          import (
     C_HEAD, C_END, C_PATH, C_DIM, C_BIGO, C_PQ, C_RACE,
-    C_HYP, C_START, C_STAT,
+    C_HYP, C_START, C_STAT, C_BACK, C_MUD,
     ansi_enable_windows,
 )
-from ui.terminal_utils import _center_ansi, _term_width, clear_screen
+from ui.terminal_utils import _center_ansi, _term_width, clear_screen, flush_stdin
 from algorithms.registry import (
     _REGISTRY,
     _STEP_LABELS, _ALGO_BIG_O, _ALGO_VERDICTS,
@@ -19,6 +20,75 @@ from algorithms.registry import (
 )
 
 ansi_enable_windows()
+
+# ===========================================================================
+# ── TOPOLOGY PANEL ─────────────────────────────────────────────────────────
+# ===========================================================================
+def show_topology_panel(
+    stats:     MazeStats,
+    generator: str = "dfs",
+    rows:      int = 0,
+    cols:      int = 0,
+) -> None:
+    """Show maze structure stats after generation, before the first run.
+
+    Gives the user context about the maze before they pick an algorithm —
+    dead end count, junctions, BFS path length, and a one-line hint about
+    which algorithm families might struggle.
+    """
+    W = _term_width()
+
+    # colour the score the same way the menu info bar does
+    if stats.difficulty <= 25:
+        dc = C_PATH
+    elif stats.difficulty <= 50:
+        dc = C_START
+    elif stats.difficulty <= 75:
+        dc = C_RACE
+    else:
+        dc = C_BACK
+
+    band = (
+        "easy"   if stats.difficulty <= 25 else
+        "medium" if stats.difficulty <= 50 else
+        "hard"   if stats.difficulty <= 75 else
+        "brutal"
+    )
+
+    # one-line contextual hint
+    if stats.dead_end_pct > 15:
+        hint = "Many dead ends — wall followers will struggle here."
+    elif stats.junction_pct > 15:
+        hint = "Dense crossroads — uninformed search expands a lot."
+    elif stats.bfs_path > 150:
+        hint = "Long solution path — stochastic strategies will take a while."
+    elif stats.difficulty <= 25:
+        hint = "Open layout — most algorithms will solve this quickly."
+    else:
+        hint = f"BFS path is {stats.bfs_path} hops — {generator.upper()} topology."
+
+    grid_pct = stats.passable * 100 // max(1, rows * cols)
+    sep = "─" * W
+
+    print("\n" + "═" * W)
+    print(_center_ansi(
+        f"🗺️   MAZE TOPOLOGY  |  {rows}×{cols}  |  {generator.upper()}"
+        f"  |  {dc}{stats.difficulty}/100  {band}{C_END}",
+        W,
+    ))
+    print("═" * W)
+    print(f"  {'Passable cells':<24} {stats.passable:>5}   ({grid_pct}% of grid)")
+    print(f"  {'Dead ends':<24} {stats.dead_ends:>5}   ({stats.dead_end_pct:.1f}% of passable)")
+    print(f"  {'Junctions (3+ exits)':<24} {stats.junctions:>5}   ({stats.junction_pct:.1f}% of passable)")
+    print(f"  {'Avg exits per cell':<24} {stats.avg_exits:>5.1f}")
+    print(f"  {'Longest corridor':<24} {stats.longest_corridor:>5}   cells")
+    print(f"  {'BFS path S→E':<24} {stats.bfs_path:>5}   hops")
+    print(sep)
+    print(f"  {C_DIM}💡 {hint}{C_END}")
+    print("─" * W)
+    flush_stdin()
+    input(f"  Press {C_PATH}ENTER{C_END} to continue…")
+
 
 # ===========================================================================
 # ── REPORT CARD ───────────────────────────────────────────────────────────────

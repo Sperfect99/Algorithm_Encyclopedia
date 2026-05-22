@@ -20,7 +20,10 @@ import time
 from itertools import zip_longest
 from typing import Callable
 
-from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES, _GEN_CYCLE, maze_difficulty
+from maze_genV4 import (
+    generate_maze, add_terrain, MAZE_SIZES, _GEN_CYCLE,
+    maze_difficulty, maze_analyse, MazeStats,
+)
 
 from core.types        import RunResult, _StepRecord
 from core.grid         import terrain_cost, DIRECTIONS, PASSABLE
@@ -46,6 +49,7 @@ from algorithms.registry import (
 from maze_views import (
     show_report_card,
     show_tutorial,
+    show_topology_panel,
     _hypothesis_pre_run,
     _hypothesis_post_run,
 )
@@ -426,7 +430,7 @@ def _compact_menu(
     print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
     print("═" * W)
     print(
-        f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
+        f"  Maze: {size_lbl}"
         f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
         f"  |  Terrain: {terrain_lbl}"
         f"  |  Fog: {fog_lbl}"
@@ -459,6 +463,7 @@ def _compact_menu(
         f"  16.🏆Benchmark  17.📚Tutorial"
         f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
         f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats  22.🗺️Gen:{gen_lbl}"
+        f"  {C_DIM}[n]New  [t]Topo{C_END}"
     )
     print(
         f"     🌿 Terrain: {terrain_lbl}"
@@ -489,11 +494,24 @@ def _main_loop() -> None:
 
     generator_type: str = "dfs"   # cycles via option 22: dfs → kruskal → prim
 
-    my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
-    _diff: int = maze_difficulty(my_maze)
+    # No maze at startup — generated the first time an algorithm is chosen.
+    # These defaults are used until setup_new_maze() is called.
+    my_maze:        list | None    = None
+    _stats:         MazeStats | None = None
+    _diff:          int            = -1
+    delay:          float          = 0.05
+    skip_frames:    int            = 1
+    terrain_active: bool           = False
 
-    # Load custom plugins once per session. _discover_plugins() also creates
-    # the custom/ folder if it's missing so it's there for next time.
+    def _setup_maze() -> None:
+        """Run setup, compute stats, show topology panel. Updates outer vars."""
+        nonlocal my_maze, _stats, _diff, delay, skip_frames, terrain_active, generator_type
+        my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
+        _stats = maze_analyse(my_maze)
+        _diff  = _stats.difficulty
+        show_topology_panel(_stats, generator_type, len(my_maze), len(my_maze[0]))
+
+    # Load custom plugins once at session start
     _plugins = _discover_plugins()
     if _plugins:
         print(
@@ -509,13 +527,18 @@ def _main_loop() -> None:
     recording:       list[_StepRecord]            = []
 
     while True:
-        rows, cols  = len(my_maze), len(my_maze[0])
+        if my_maze is not None:
+            rows, cols = len(my_maze), len(my_maze[0])
+            size_lbl   = f"{C_BIGO}{rows}×{cols}{C_END}"
+        else:
+            rows, cols = 0, 0
+            size_lbl   = f"{C_DIM}none — pick an algorithm to generate{C_END}"
+
         fog_lbl     = f"{C_BACK}ON {C_END}" if fog_mode      else f"{C_DOT}OFF{C_END}"
         terrain_lbl = f"{C_MUD}ON {C_END}"  if terrain_active else f"{C_DOT}OFF{C_END}"
         gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
-        # colour the difficulty score by band so it reads instantly
-        _dc = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
-        diff_lbl = f"{_dc}{_diff:>3}{C_END}"
+        _dc         = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
+        diff_lbl    = f"{_dc}{_diff:>3}{C_END}" if _diff >= 0 else f"{C_DIM} — {C_END}"
         hyp_lbl     = (
             f"{C_HYP}ON{C_END}  Score: {C_HYP}{hyp_pts}/{hyp_max_pts} pts{C_END}"
             if hypothesis_mode else f"{C_DOT}OFF{C_END}"
@@ -546,7 +569,7 @@ def _main_loop() -> None:
             if _size_warn:
                 print(_size_warn)
             print(
-                f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
+                f"  Maze: {size_lbl}"
                 f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
                 f"  |  Terrain: {terrain_lbl}"
                 f"  |  Fog: {fog_lbl}"
@@ -574,6 +597,7 @@ def _main_loop() -> None:
             print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
             print(f"  22. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
+            print(f"  {C_DIM}[n] New maze   [t] Topology{C_END}")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
             print("  0.  Exit")
@@ -594,14 +618,34 @@ def _main_loop() -> None:
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
         _plug_hint = f" or {'/'.join(_plugins)}" if _plugins else ""
-        choice     = input(f"Choose an option (0–{max(21, _max_algo)}{_plug_hint}): ").strip()
+        _no_maze   = my_maze is None
+        choice     = input(
+            f"Choose an option (0–{max(22, _max_algo)}{_plug_hint}"
+            f"{', n=new maze' if not _no_maze else ''}): "
+        ).strip()
 
         if choice == "0":
             print("\nGoodbye! 🚀\n")
             break
 
+        # [n] — generate a new maze from scratch
+        elif choice.lower() == "n":
+            _setup_maze()
+            continue
+
+        # [t] — show topology panel for the current maze again
+        elif choice.lower() == "t":
+            if my_maze is None:
+                print(f"  {C_BACK}No maze yet — pick an algorithm first.{C_END}")
+            else:
+                show_topology_panel(_stats, generator_type, rows, cols)
+            continue
+
         elif choice == "16":
-            run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, maze_diff=_diff, dispatch_fn=_dispatch_algorithm)
+            if my_maze is None:
+                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                continue
+            run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, maze_diff=_diff, stats=_stats, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
 
         elif choice == "17":
@@ -659,6 +703,12 @@ def _main_loop() -> None:
             continue
 
         elif choice in _ALGO_NAMES:
+            # First time picking an algorithm — need a maze
+            if my_maze is None:
+                _setup_maze()
+                if my_maze is None:
+                    continue   # setup was cancelled
+
             m_copy:      list[list[int | str]]      = [row[:] for row in my_maze]
             visit_count: dict[tuple[int, int], int] = {}
             fog: set[tuple[int, int]] | None        = (
@@ -775,16 +825,16 @@ def _main_loop() -> None:
             print("  Invalid option — please try again.")
             continue
 
-        # After post-run tools: ask whether to keep, save, or regenerate the maze
+        # After post-run tools: ask whether to keep, save, or generate a new maze.
+        # "new maze" now goes through _setup_maze() which shows topology.
         while True:
             ans = input("\n  [ENTER/n] keep   [y] new maze   [s] save maze: ").strip().lower()
             if ans in {'y', 'yes'}:
-                my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
-                _diff = maze_difficulty(my_maze)
-                recording       = []
-                m_copy          = []
-                visit_count     = {}
-                fog             = None
+                _setup_maze()
+                recording   = []
+                m_copy      = []
+                visit_count = {}
+                fog         = None
                 if hypothesis_mode and hyp_max_pts > 0:
                     print(
                         f"  {C_DIM}🔮 Hypothesis score carries over: "

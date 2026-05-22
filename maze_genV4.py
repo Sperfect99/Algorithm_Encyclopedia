@@ -16,8 +16,27 @@ Three algorithms, each with a different character:
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 
 _CELL_CHARS: dict[int | str, str] = {0: " ", 1: "█", '~': "~"}
+
+
+@dataclass
+class MazeStats:
+    """All topology numbers for a maze in one place.
+
+    Produced by maze_analyse() so BFS only runs once per maze.
+    The difficulty score comes out of the same pass.
+    """
+    difficulty:        int    # 0-100 composite score
+    passable:          int    # total passable cells
+    dead_ends:         int    # cells with exactly one exit
+    dead_end_pct:      float  # dead_ends / passable * 100
+    junctions:         int    # cells with 3 or more exits
+    junction_pct:      float  # junctions / passable * 100
+    avg_exits:         float  # mean exits per passable cell
+    longest_corridor:  int    # longest connected run of 2-exit cells
+    bfs_path:          int    # shortest path S→E in hops
 
 MAZE_SIZES: dict[int, tuple[int, int]] = {
     0: (7,  15),  1: (9,  21),  2: (11,  27), 3: (15,  31),
@@ -228,21 +247,11 @@ def add_terrain(
     return maze
 
 
-def maze_difficulty(maze: list[list[int | str]]) -> int:
-    """Score a maze's difficulty from 0 (easy) to 100 (brutal).
+def maze_analyse(maze: list[list[int | str]]) -> "MazeStats":
+    """Analyse a maze's structure in a single BFS pass.
 
-    Four factors, weighted:
-      tortuosity (30%) — BFS path length / Manhattan distance S→E.
-                         A twisty maze that forces a long detour scores high.
-      dead ends  (30%) — fraction of cells with only one exit.
-                         More dead ends means more places to get stuck.
-      junctions  (20%) — fraction of cells with three or more exits.
-                         More choice points makes blind navigation harder.
-      size       (20%) — maze area relative to the largest possible (61×151).
-                         A bigger maze is harder purely due to scale.
-
-    Ceilings are calibrated from observed ranges across all generators
-    and complexity levels rather than picked arbitrarily.
+    Computes the difficulty score and all topology numbers at once so
+    callers don't have to run BFS twice when they need both.
     """
     from collections import deque
     from core.grid import PASSABLE, DIRECTIONS
@@ -255,25 +264,51 @@ def maze_difficulty(maze: list[list[int | str]]) -> int:
         if maze[r][c] in PASSABLE
     ]
     if not passable:
-        return 0
+        return MazeStats(0, 0, 0, 0.0, 0, 0.0, 0.0, 0, 0)
 
-    dead_ends = junctions = 0
+    dead_ends = junctions = total_exits = 0
+    corridor_cells: set[tuple[int, int]] = set()
+
     for r, c in passable:
         exits = sum(
             1 for dr, dc in DIRECTIONS
             if 0 <= r + dr < rows and 0 <= c + dc < cols
             and maze[r + dr][c + dc] in PASSABLE
         )
+        total_exits += exits
         if exits == 1:
             dead_ends += 1
+        elif exits == 2:
+            corridor_cells.add((r, c))
         elif exits >= 3:
             junctions += 1
 
     total      = len(passable)
     dead_ratio = dead_ends / total
     junc_ratio = junctions / total
+    avg_exits  = total_exits / total
 
-    # BFS for actual shortest path length
+    # Longest connected run of 2-exit corridor cells
+    seen    = set()
+    longest = 0
+    for cell in corridor_cells:
+        if cell in seen:
+            continue
+        from collections import deque as _dq
+        q = _dq([cell])
+        seen.add(cell)
+        length = 0
+        while q:
+            cr, cc = q.popleft()
+            length += 1
+            for dr, dc in DIRECTIONS:
+                nb = (cr + dr, cc + dc)
+                if nb in corridor_cells and nb not in seen:
+                    seen.add(nb)
+                    q.append(nb)
+        longest = max(longest, length)
+
+    # BFS for shortest path S to E
     queue   = deque([start])
     visited: dict[tuple[int, int], int] = {start: 0}
     bfs_len = 0
@@ -296,21 +331,33 @@ def maze_difficulty(maze: list[list[int | str]]) -> int:
     manhattan  = abs(end[0] - start[0]) + abs(end[1] - start[1])
     tortuosity = bfs_len / manhattan if manhattan > 0 and bfs_len > 0 else 1.0
 
-    # Normalise to 0-1 using observed ceilings across all generators/levels:
-    #   tortuosity peaks around 2.0, dead ratio around 0.20, junc around 0.20
     tort_norm = min(1.0, (tortuosity - 1.0) / 1.0)
     dead_norm = min(1.0, dead_ratio / 0.20)
     junc_norm = min(1.0, junc_ratio / 0.20)
-    # Largest maze is 61×151 = 9211 cells
     size_norm = min(1.0, (rows * cols) / 9211)
 
-    score = (
-        tort_norm * 0.30
-        + dead_norm * 0.30
-        + junc_norm * 0.20
-        + size_norm * 0.20
-    ) * 100
-    return max(0, min(100, round(score)))
+    score = max(0, min(100, round(
+        (tort_norm * 0.30 + dead_norm * 0.30 + junc_norm * 0.20 + size_norm * 0.20) * 100
+    )))
+
+    return MazeStats(
+        difficulty       = score,
+        passable         = total,
+        dead_ends        = dead_ends,
+        dead_end_pct     = round(dead_ratio * 100, 1),
+        junctions        = junctions,
+        junction_pct     = round(junc_ratio * 100, 1),
+        avg_exits        = round(avg_exits, 1),
+        longest_corridor = longest,
+        bfs_path         = bfs_len,
+    )
+
+
+def maze_difficulty(maze: list[list[int | str]]) -> int:
+    """Return just the 0-100 score. Use maze_analyse() when you need the full breakdown."""
+    return maze_analyse(maze).difficulty
+
+
 
 
 def draw_maze(maze: list[list[int | str]]) -> None:
