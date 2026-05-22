@@ -20,7 +20,7 @@ import time
 from itertools import zip_longest
 from typing import Callable
 
-from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES, _GEN_CYCLE
+from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES, _GEN_CYCLE, maze_difficulty
 
 from core.types        import RunResult, _StepRecord
 from core.grid         import terrain_cost, DIRECTIONS, PASSABLE
@@ -82,6 +82,7 @@ _SPEED_NAMES: dict[str, str] = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "I
 # Using a list so helper functions can mutate it without needing `global`.
 # Feels slightly hacky but cleaner than threading it through every call.
 _ACTIVE_COMPLEXITY_SLOT: list[str] = [""]
+_ACTIVE_DIFF_SLOT:       list[int] = [-1]
 
 
 def _set_active_complexity(algo_name: str) -> None:
@@ -90,6 +91,14 @@ def _set_active_complexity(algo_name: str) -> None:
 
 def _clear_active_complexity() -> None:
     _ACTIVE_COMPLEXITY_SLOT[0] = ""
+
+
+def _set_active_diff(diff: int) -> None:
+    _ACTIVE_DIFF_SLOT[0] = diff
+
+
+def _clear_active_diff() -> None:
+    _ACTIVE_DIFF_SLOT[0] = -1
 
 
 
@@ -148,6 +157,7 @@ def _dispatch_algorithm(
         gen, maze, skip_frames, delay, algo_name,
         _ACTIVE_COMPLEXITY_SLOT, _ACTIVE_RECORDING,
         fog=fog,
+        maze_diff=_ACTIVE_DIFF_SLOT[0],
     )
 
 
@@ -421,6 +431,7 @@ def _compact_menu(
         f"  |  Terrain: {terrain_lbl}"
         f"  |  Fog: {fog_lbl}"
         f"  |  Gen: {gen_lbl}"
+        f"  |  Diff: {diff_lbl}"
     )
     print("─" * W)
 
@@ -479,6 +490,7 @@ def _main_loop() -> None:
     generator_type: str = "dfs"   # cycles via option 22: dfs → kruskal → prim
 
     my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
+    _diff: int = maze_difficulty(my_maze)
 
     # Load custom plugins once per session. _discover_plugins() also creates
     # the custom/ folder if it's missing so it's there for next time.
@@ -501,6 +513,9 @@ def _main_loop() -> None:
         fog_lbl     = f"{C_BACK}ON {C_END}" if fog_mode      else f"{C_DOT}OFF{C_END}"
         terrain_lbl = f"{C_MUD}ON {C_END}"  if terrain_active else f"{C_DOT}OFF{C_END}"
         gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
+        # colour the difficulty score by band so it reads instantly
+        _dc = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
+        diff_lbl = f"{_dc}{_diff:>3}{C_END}"
         hyp_lbl     = (
             f"{C_HYP}ON{C_END}  Score: {C_HYP}{hyp_pts}/{hyp_max_pts} pts{C_END}"
             if hypothesis_mode else f"{C_DOT}OFF{C_END}"
@@ -536,6 +551,7 @@ def _main_loop() -> None:
                 f"  |  Terrain: {terrain_lbl}"
                 f"  |  Fog: {fog_lbl}"
                 f"  |  Gen: {gen_lbl}"
+                f"  |  Diff: {diff_lbl}"
             )
             print()
 
@@ -585,7 +601,7 @@ def _main_loop() -> None:
             break
 
         elif choice == "16":
-            run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, dispatch_fn=_dispatch_algorithm)
+            run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, maze_diff=_diff, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
 
         elif choice == "17":
@@ -655,6 +671,7 @@ def _main_loop() -> None:
                 hyp_max_pts += 4
 
             _set_active_complexity(_ALGO_NAMES[choice])
+            _set_active_diff(_diff)
 
             _start_recording()
             try:
@@ -664,9 +681,10 @@ def _main_loop() -> None:
             finally:
                 recording = _stop_recording()
                 _clear_active_complexity()
+                _clear_active_diff()
 
 
-            show_report_card(_ALGO_NAMES[choice], result, terrain_active)
+            show_report_card(_ALGO_NAMES[choice], result, terrain_active, maze_diff=_diff)
 
             if hypothesis_mode and predictions:
                 pts      = _hypothesis_post_run(predictions, result, _ALGO_NAMES[choice])
@@ -747,6 +765,7 @@ def _main_loop() -> None:
                 maze_copy, spec, delay, skip_frames,
                 fog if fog_mode else None,
                 visit_count,
+                maze_diff=_diff,
             )
             # post-run options (heatmap, autopsy, duel) same as built-in algos
             m_copy      = maze_copy
@@ -761,6 +780,7 @@ def _main_loop() -> None:
             ans = input("\n  [ENTER/n] keep   [y] new maze   [s] save maze: ").strip().lower()
             if ans in {'y', 'yes'}:
                 my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
+                _diff = maze_difficulty(my_maze)
                 recording       = []
                 m_copy          = []
                 visit_count     = {}

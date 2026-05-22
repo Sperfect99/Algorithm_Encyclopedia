@@ -44,10 +44,11 @@ def _save_benchmark_export(
     maze:           list[list[int | str]],
     terrain_active: bool,
     generator:      str = "dfs",
+    maze_diff:      int = -1,
 ) -> tuple[str, str]:
     """Write benchmark results to CSV and the maze to JSON, both timestamped.
 
-    CSV includes full context: complexity, generator, rows, cols, terrain.
+    CSV includes full context: complexity, generator, rows, cols, terrain, maze_diff.
     Returns (csv_path, maze_path).
     """
     from maze_genV4 import MAZE_SIZES
@@ -64,26 +65,28 @@ def _save_benchmark_export(
     csv_path  = os.path.join(_EXPORT_DIR, f"{base}.csv")
     maze_path = os.path.join(_EXPORT_DIR, f"{base}.maze")
 
-    terrain_s = "true" if terrain_active else "false"
+    terrain_s  = "true" if terrain_active else "false"
+    diff_field = maze_diff if maze_diff >= 0 else "—"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
-            "complexity", "generator", "rows", "cols", "terrain",
+            "complexity", "generator", "rows", "cols", "terrain", "maze_diff",
             "algorithm", "steps", "time_ms", "path_len", "path_cost", "efficiency_pct",
         ])
         for name, r in results:
             if r.steps == float("inf"):
-                w.writerow([complexity, generator, rows, cols, terrain_s,
+                w.writerow([complexity, generator, rows, cols, terrain_s, diff_field,
                             name, "FAILED", f"{r.compute_time * 1000:.2f}", 0, 0, "—"])
             else:
                 eff = f"{r.path_len / r.steps * 100:.1f}" if r.steps > 0 else "0.0"
-                w.writerow([complexity, generator, rows, cols, terrain_s,
+                w.writerow([complexity, generator, rows, cols, terrain_s, diff_field,
                             name, int(r.steps), f"{r.compute_time * 1000:.2f}",
                             r.path_len, r.path_cost, eff])
 
     maze_data = {
         "complexity": complexity, "rows": rows, "cols": cols,
-        "terrain": terrain_active, "generator": generator, "grid": maze,
+        "terrain": terrain_active, "generator": generator,
+        "maze_diff": maze_diff, "grid": maze,
     }
     with open(maze_path, "w", encoding="utf-8") as f:
         json.dump(maze_data, f, separators=(",", ":"))
@@ -639,6 +642,7 @@ def run_benchmark(
     terrain_active: bool,
     *,
     generator:   str = "dfs",
+    maze_diff:   int = -1,
     dispatch_fn: Callable,
 ) -> None:
     """Run all algorithms on the current maze and print a comparison table."""
@@ -722,7 +726,7 @@ def run_benchmark(
 
     if save_ans in {"y", "yes"}:
         try:
-            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active, generator)
+            csv_path, maze_path = _save_benchmark_export(results, original_maze, terrain_active, generator, maze_diff)
             print(f"\n  ✅ Saved to {C_PATH}{_EXPORT_DIR}/{C_END}")
             print(f"     {csv_path}")
             print(f"     {maze_path}")

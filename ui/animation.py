@@ -71,6 +71,7 @@ def run_algorithm(
     active_complexity:  list[str],
     active_recording:   list[_StepRecord] | None,
     fog:                set[tuple[int, int]] | None = None,
+    maze_diff:          int = -1,
 ) -> RunResult:
     """Drive a classic pathfinding generator to completion.
 
@@ -96,7 +97,8 @@ def run_algorithm(
                     maze[r][c] = '@'
 
                 if steps % skip_frames == 0:
-                    hud_lines = [f"Running: {title} | Steps: {steps}"]
+                    _diff_s = f"  |  Diff: {maze_diff}" if maze_diff >= 0 else ""
+                    hud_lines = [f"Running: {title} | Steps: {steps}{_diff_s}"]
                     if active_complexity[0]:
                         hud_lines.append(
                             f"  {C_BIGO}📐 {active_complexity[0]}{C_END}"

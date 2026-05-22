@@ -27,6 +27,7 @@ def show_report_card(
     algo_name: str,
     result: RunResult,
     terrain_active: bool,
+    maze_diff: int = -1,
 ) -> None:
     """Display a structured post-run statistics panel."""
     W          = _term_width()
@@ -93,6 +94,10 @@ def show_report_card(
 
         print(f"  {'Compute Time':<28}: {result.compute_time * 1000:.2f} ms  ⚠ single-run, interpreter noise ±1 ms")
 
+    if maze_diff >= 0:
+        _band = "easy" if maze_diff <= 25 else "medium" if maze_diff <= 50 else "hard" if maze_diff <= 75 else "brutal"
+        print(f"  {'Maze Difficulty':<28}: {maze_diff}/100  ({_band})")
+
     # V6: always show Big-O in report card too
     bigo = _ALGO_BIG_O.get(algo_name, "")
     if bigo:
@@ -112,34 +117,175 @@ def show_report_card(
             )
     print("═" * W)
 
-# ===========================================================================
-# ── TUTORIAL ──────────────────────────────────────────────────────────────────
-# ===========================================================================
-def show_tutorial() -> None:
-    """Display educational descriptions of all 15 algorithms."""
-    clear_screen()
-    _TW = _term_width()
-    print("\n" + "═" * _TW)
-    print(_center_ansi("📚  ALGORITHM TUTORIAL & EXPLANATIONS  📚", _TW))
-    print("═" * _TW)
-    print(
-        "  V = traversable cells  |  d = solution depth"
-        "  |  E = edges (~4V on grid)\n"
-    )
+def _family_tree_lines() -> list[str]:
+    """Return the algorithm family tree as a list of strings, no printing.
 
-    entries = [
-        (f"{s.key}. {s.tutorial_title}", s.tutorial_body)
-        for s in _REGISTRY
+    Kept separate so the pager can include it as a block without
+    having to capture stdout.
+    """
+    D = C_DIM
+    P = C_PATH
+    S = C_START
+    B = C_BIGO
+    E = C_END
+
+    return [
+        f"  {B}Uninformed Search{E}",
+        f"  {D}───────────────────────────────────────────────────────────────{E}",
+        f"  {S}BFS{E}  {P}──► +terrain cost{E}  ──►  {S}Dijkstra{E}  {P}──► +heuristic{E}  ──►  {S}A*{E}",
+        f"   │                                         {D}└─ heuristic only{E}  ──►  {S}Greedy Best-First{E}",
+        f"   {P}└──► two frontiers{E}  ──────────────────────────────────────►  {S}Bidirectional BFS{E}",
+        "",
+        f"  {S}DFS{E}  {P}──► shuffle directions{E}  ────────────────────────────►  {S}Randomized DFS{E}",
+        f"   {P}└──► iterative deepening + A* f-bound{E}  ────────────────────►  {S}IDA*{E}",
+        "",
+        f"  {B}Wall-Following{E}  {D}(O(1) space — no map, no memory){E}",
+        f"  {D}───────────────────────────────────────────────────────────────{E}",
+        f"  {S}Wall Follower{E}  {P}──► mirror{E}  ──────────────────────────────►  {S}Left-Hand Rule{E}",
+        f"       {P}└──► +turn counter{E}  ────────────────────────────────►  {S}Pledge{E}  {D}(escapes islands){E}",
+        "",
+        f"  {B}Stochastic / Historical{E}",
+        f"  {D}───────────────────────────────────────────────────────────────{E}",
+        f"  {S}Random Mouse{E}  {P}──► +passage marking{E}  ────────────────────►  {S}Trémaux{E}  {D}(1882){E}",
+        "",
+        f"  {B}Topological{E}  {D}(not a search — solves by elimination){E}",
+        f"  {D}───────────────────────────────────────────────────────────────{E}",
+        f"  {S}Dead-End Filling{E}  {D}— seals cells with ≥3 wall neighbours one by one{E}",
+        f"                       {D}what survives is the solution path{E}",
     ]
-    for title, description in entries:
-        print(f"\n{C_START}{title}:{C_END}")
-        print(f"   {description}")
 
-    print("\n" + "═" * _TW)
-    print(f"\n  {C_BIGO}V6 Big-O HUD is active during every algorithm run.{C_END}")
-    print(f"  {C_PQ}V6 PQ Inspector is active for A*, Dijkstra, and Greedy.{C_END}")
-    print(f"  {C_RACE}V6 Race Mode (option 20) runs any two algorithms side-by-side.{C_END}")
-    input(f"\n👉 Press {C_PATH}ENTER{C_END} to return to the Main Menu…")
+
+def _show_family_tree() -> None:
+    """Print the family tree directly — used when called outside the pager."""
+    _TW = _term_width()
+    print("\n" + "─" * _TW)
+    print(_center_ansi(f"{C_BIGO}🌳  ALGORITHM FAMILY TREE{C_END}", _TW))
+    print(f"  {C_DIM}How the 15 algorithms relate to each other.{C_END}")
+    print("─" * _TW + "\n")
+    for line in _family_tree_lines():
+        print(line)
+    print()
+
+
+# --- TUTORIAL ---
+
+def show_tutorial() -> None:
+    """Tutorial with block-aware pagination — no content ever scrolls off screen."""
+    from ui.terminal_utils import _term_height
+
+    _TW = _term_width()
+    _TH = _term_height()
+
+    # Minimum usable size. btop uses 80×24 as the de facto standard — we do the same.
+    MIN_COLS, MIN_ROWS = 80, 24
+    if _TW < MIN_COLS or _TH < MIN_ROWS:
+        clear_screen()
+        print(
+            f"\n  ⚠️  Terminal too small for Tutorial\n"
+            f"  Minimum : {MIN_COLS} columns × {MIN_ROWS} rows\n"
+            f"  Current : {_TW} columns × {_TH} rows\n\n"
+            f"  Resize your terminal and press ENTER to try again,\n"
+            f"  or press Q to go back."
+        )
+        if input("\n  → ").strip().lower() != 'q':
+            show_tutorial()
+        return
+
+    # Build content as blocks — each block stays together on one page.
+    #
+    # The bug that was here: tutorial_body strings contain embedded \n,
+    # so treating each entry as a 2-element list made len(block) = 2
+    # while A* for example actually prints 6 lines. The pager was then
+    # fitting way more blocks per page than it should.
+    # Fix: split each body on \n so len(block) == actual printed lines.
+    blocks: list[list[str]] = []
+
+    for s in _REGISTRY:
+        body_parts = s.tutorial_body.split('\n')
+        block      = [f"{C_START}{s.key}. {s.tutorial_title}:{C_END}"]
+        # first body line needs the indent prefix;
+        # continuation lines already have their spacing baked in
+        block.append(f"   {body_parts[0]}")
+        block.extend(body_parts[1:])
+        blocks.append(block)
+
+    # Family tree gets its own page (it's ~22 lines, needs breathing room)
+    tree_header = [
+        "─" * _TW,
+        _center_ansi(f"{C_BIGO}🌳  ALGORITHM FAMILY TREE{C_END}", _TW),
+        f"  {C_DIM}How the 15 algorithms relate to each other.{C_END}",
+        "─" * _TW,
+    ]
+    blocks.append(tree_header + _family_tree_lines())
+
+    footer_block = [
+        f"  {C_BIGO}Big-O HUD is active during every algorithm run.{C_END}",
+        f"  {C_PQ}PQ Inspector is active for A*, Dijkstra, and Greedy.{C_END}",
+        f"  {C_RACE}Race Mode (option 20) runs any two algorithms side-by-side.{C_END}",
+    ]
+    blocks.append(footer_block)
+
+    # Actual lines the header uses when rendered:
+    #   print("\n" + "═" * _TW)  →  blank + ═══  = 2 lines
+    #   print(title)              →  1 line
+    #   print(legend + page)      →  1 line
+    #   print("═" * _TW + "\n")  →  ═══ + blank  = 2 lines
+    # Total header = 6.  Nav = ─── divider + input = 2.
+    HEADER_H = 6
+    NAV_H    = 2
+
+    def _build_pages() -> list[list[list[str]]]:
+        page_h   = max(4, _TH - HEADER_H - NAV_H)
+        pages:   list[list[list[str]]] = []
+        current: list[list[str]]       = []
+        used                           = 0
+
+        for block in blocks:
+            needed = len(block) + 1  # +1 for the blank line after each block
+            if used + needed > page_h and current:
+                pages.append(current)
+                current, used = [block], needed
+            else:
+                current.append(block)
+                used += needed
+
+        if current:
+            pages.append(current)
+        return pages
+
+    pages = _build_pages()
+    n     = len(pages)
+    idx   = 0
+
+    while True:
+        clear_screen()
+        print("\n" + "═" * _TW)
+        print(_center_ansi("📚  ALGORITHM TUTORIAL & EXPLANATIONS  📚", _TW))
+        print(
+            f"  V = cells  |  d = depth  |  E = edges (~4V)"
+            f"  {C_DIM}── page {idx + 1}/{n}{C_END}"
+        )
+        print("═" * _TW + "\n")
+
+        for block in pages[idx]:
+            for line in block:
+                print(line)
+            print()
+
+        back = f"[b] back  " if idx > 0 else ""
+        fwd  = f"[ENTER] next" if idx < n - 1 else f"[ENTER] done"
+        print("─" * _TW)
+        ans = input(f"  {back}{fwd}  [q] quit: ").strip().lower()
+
+        if ans == 'q':
+            break
+        elif ans == 'b' and idx > 0:
+            idx -= 1
+        elif ans in {'', 'n'}:
+            if idx < n - 1:
+                idx += 1
+            else:
+                break
 
 # ===========================================================================
 # ── HYPOTHESIS CHALLENGE ──────────────────────────────────────────────────────

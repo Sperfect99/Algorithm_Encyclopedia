@@ -228,6 +228,91 @@ def add_terrain(
     return maze
 
 
+def maze_difficulty(maze: list[list[int | str]]) -> int:
+    """Score a maze's difficulty from 0 (easy) to 100 (brutal).
+
+    Four factors, weighted:
+      tortuosity (30%) — BFS path length / Manhattan distance S→E.
+                         A twisty maze that forces a long detour scores high.
+      dead ends  (30%) — fraction of cells with only one exit.
+                         More dead ends means more places to get stuck.
+      junctions  (20%) — fraction of cells with three or more exits.
+                         More choice points makes blind navigation harder.
+      size       (20%) — maze area relative to the largest possible (61×151).
+                         A bigger maze is harder purely due to scale.
+
+    Ceilings are calibrated from observed ranges across all generators
+    and complexity levels rather than picked arbitrarily.
+    """
+    from collections import deque
+    from core.grid import PASSABLE, DIRECTIONS
+
+    rows, cols = len(maze), len(maze[0])
+    start, end = (0, 0), (rows - 1, cols - 1)
+
+    passable = [
+        (r, c) for r in range(rows) for c in range(cols)
+        if maze[r][c] in PASSABLE
+    ]
+    if not passable:
+        return 0
+
+    dead_ends = junctions = 0
+    for r, c in passable:
+        exits = sum(
+            1 for dr, dc in DIRECTIONS
+            if 0 <= r + dr < rows and 0 <= c + dc < cols
+            and maze[r + dr][c + dc] in PASSABLE
+        )
+        if exits == 1:
+            dead_ends += 1
+        elif exits >= 3:
+            junctions += 1
+
+    total      = len(passable)
+    dead_ratio = dead_ends / total
+    junc_ratio = junctions / total
+
+    # BFS for actual shortest path length
+    queue   = deque([start])
+    visited: dict[tuple[int, int], int] = {start: 0}
+    bfs_len = 0
+    while queue:
+        r, c = queue.popleft()
+        d    = visited[(r, c)]
+        if (r, c) == end:
+            bfs_len = d
+            break
+        for dr, dc in DIRECTIONS:
+            nr, nc = r + dr, c + dc
+            if (
+                0 <= nr < rows and 0 <= nc < cols
+                and maze[nr][nc] in PASSABLE
+                and (nr, nc) not in visited
+            ):
+                visited[(nr, nc)] = d + 1
+                queue.append((nr, nc))
+
+    manhattan  = abs(end[0] - start[0]) + abs(end[1] - start[1])
+    tortuosity = bfs_len / manhattan if manhattan > 0 and bfs_len > 0 else 1.0
+
+    # Normalise to 0-1 using observed ceilings across all generators/levels:
+    #   tortuosity peaks around 2.0, dead ratio around 0.20, junc around 0.20
+    tort_norm = min(1.0, (tortuosity - 1.0) / 1.0)
+    dead_norm = min(1.0, dead_ratio / 0.20)
+    junc_norm = min(1.0, junc_ratio / 0.20)
+    # Largest maze is 61×151 = 9211 cells
+    size_norm = min(1.0, (rows * cols) / 9211)
+
+    score = (
+        tort_norm * 0.30
+        + dead_norm * 0.30
+        + junc_norm * 0.20
+        + size_norm * 0.20
+    ) * 100
+    return max(0, min(100, round(score)))
+
+
 def draw_maze(maze: list[list[int | str]]) -> None:
     """Quick debug print. The solver uses its own ANSI renderer."""
     for row in maze:
