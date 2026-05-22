@@ -4,6 +4,14 @@ _encyclopedia_launcher.py — master menu for the Algorithm Encyclopedia.
 Launches the four modules on demand. Each one is imported only when selected
 so startup is instant. A missing file prints a warning and falls back to the
 menu rather than crashing everything.
+
+Flags (run with --help for the full list):
+  --learn          Classic Pathfinding, simplified menu
+  --classic        Classic Pathfinding, full experience
+  --tsp            TSP / Treasure Hunt module
+  --mapf           Multi-Agent Pathfinding module
+  --pursuit        Pursuit-Evasion module
+  --help           Print flag descriptions and exit
 """
 
 from __future__ import annotations
@@ -22,6 +30,75 @@ ansi_enable_windows()
 
 # modules that crashed during this session — consulted at exit for CI exit code
 _CHILD_CRASHED: set[str] = set()
+
+
+# --- flag parser ---
+
+def _parse_flags() -> dict:
+    """Read sys.argv and return a dict with the session configuration.
+
+    Unknown flags are ignored so future additions don't break older installs.
+    """
+    args  = sys.argv[1:]
+    flags = {
+        "mode":   "launcher",   # launcher | learn | classic | tsp | mapf | pursuit
+    }
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--help":
+            _print_help()
+            sys.exit(0)
+        elif arg == "--learn":
+            flags["mode"] = "learn"
+        elif arg == "--classic":
+            flags["mode"] = "classic"
+        elif arg == "--tsp":
+            flags["mode"] = "tsp"
+        elif arg == "--mapf":
+            flags["mode"] = "mapf"
+        elif arg == "--pursuit":
+            flags["mode"] = "pursuit"
+        i += 1
+
+    return flags
+
+
+def _print_help() -> None:
+    """Print all available flags with descriptions."""
+    print(f"""
+{C_GOLD}Algorithm Encyclopedia — available flags{C_END}
+
+  {C_PATH}--learn{C_END}      Opens Classic Pathfinding with a simplified menu.
+               Shows algorithms 1-15 and Tutorial only.
+               No Benchmark, Race Mode, Multi-run, or advanced options.
+               Good first stop for anyone new to the project.
+
+  {C_PATH}--classic{C_END}    Opens Classic Pathfinding directly with the full experience.
+               Same as launching module [1] from the main menu.
+
+  {C_PATH}--tsp{C_END}        Opens the TSP / Treasure Hunt module directly.
+  {C_PATH}--mapf{C_END}       Opens the Multi-Agent Pathfinding module directly.
+  {C_PATH}--pursuit{C_END}    Opens the Pursuit-Evasion module directly.
+
+  {C_PATH}--help{C_END}       Show this message.
+
+  {C_DIM}No flags → opens the main launcher menu (default).{C_END}
+
+{C_DIM}Examples:
+  python _encyclopedia_launcher.py
+  python _encyclopedia_launcher.py --learn
+  python _encyclopedia_launcher.py --classic
+  python _encyclopedia_launcher.py --help{C_END}
+""")
+    # Pause before exit so the terminal doesn't close before the user reads it.
+    # On Windows running from Explorer or cmd, the window vanishes immediately
+    # after sys.exit() without this.
+    try:
+        input("  Press ENTER to exit…")
+    except (KeyboardInterrupt, EOFError):
+        pass
 
 
 # --- banner ---
@@ -119,8 +196,12 @@ _MODULES: list[tuple[str, str, str, str]] = [
 
 # --- module loader ---
 
-def _launch_module(module_name: str, display_title: str) -> None:
-    """Load and run a module's main() function."""
+def _launch_module(module_name: str, display_title: str, **kwargs) -> None:
+    """Load and run a module's main() function.
+
+    kwargs are forwarded to main() so flags like mode='learn' reach
+    the module without the launcher needing to know the details.
+    """
     print(f"\n{C_DOT}⏳ Loading module: {C_BOLD}{display_title}{C_END}{C_DOT}…{C_END}")
     time.sleep(0.3)
 
@@ -149,7 +230,7 @@ def _launch_module(module_name: str, display_title: str) -> None:
         return
 
     try:
-        entry()
+        entry(**kwargs)
     except (KeyboardInterrupt, EOFError):
         print(f"\n\n  {C_DOT}↩  Returned from {display_title}.{C_END}")
         time.sleep(0.5)
@@ -180,7 +261,17 @@ def _master_menu() -> None:
     _splash_shown: bool = False
 
     while True:
+        W = _term_width()
         H = _term_height()
+
+        # Soft warning — shown as a banner line in the menu rather than
+        # a hard block. Lets the user still navigate and pick a module;
+        # individual features block themselves if they genuinely can't fit.
+        _size_warn = (
+            f"  {C_BACK}⚠  Small terminal ({W}×{H}) — some features may not render correctly{C_END}"
+            if W < 80 or H < 28 else ""
+        )
+
         _clear_screen()
 
         # If the terminal is too short to fit banner + menu together,
@@ -210,6 +301,8 @@ def _master_menu() -> None:
             print()
 
         # menu body
+        if _size_warn:
+            print(_size_warn)
         print(f"{C_GOLD}{'─' * 76}{C_END}")
         print(
             f"  {C_BOLD}{C_TITLE}SELECT A MODULE{C_END}"
@@ -267,8 +360,24 @@ def _master_menu() -> None:
 # --- entry point ---
 
 def main() -> None:
+    flags = _parse_flags()
+    mode  = flags["mode"]
+
+    # Direct module shortcuts — skip the launcher menu entirely
+    _DIRECT: dict[str, tuple[str, str, dict]] = {
+        "learn":   ("maze_controller",    "Classic Pathfinding",          {"mode": "learn"}),
+        "classic": ("maze_controller",    "Classic Pathfinding",          {}),
+        "tsp":     ("treasure_solver2",   "TSP / Treasure Hunt",          {}),
+        "mapf":    ("multi_agent_solver", "MAPF — Multi-Agent Pathfinding", {}),
+        "pursuit": ("dynamic_solver3",    "Pursuit-Evasion",              {}),
+    }
+
     try:
-        _master_menu()
+        if mode in _DIRECT:
+            module_name, display_title, kwargs = _DIRECT[mode]
+            _launch_module(module_name, display_title, **kwargs)
+        else:
+            _master_menu()
     except (KeyboardInterrupt, EOFError):
         print(f"\033[0m\n\n{C_DOT}Interrupted — goodbye! 🚀{C_END}\n")
     finally:

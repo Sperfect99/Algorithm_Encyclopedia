@@ -412,6 +412,8 @@ def _compact_menu(
     hypothesis_mode: bool,
     plugins:        dict | None = None,
     gen_lbl:        str = "",
+    size_lbl:       str = "",
+    diff_lbl:       str = "",
 ) -> None:
     """2-column algorithm grid for short terminals.
 
@@ -479,18 +481,24 @@ def _compact_menu(
 
 # --- MAIN LOOP ---
 
-def main() -> None:
+def main(mode: str = "full") -> None:
     """Entry point. Wraps the session loop with clean Ctrl-C / EOF handling
     so the terminal doesn't get a noisy traceback when running in class."""
     try:
-        _main_loop()
+        _main_loop(mode=mode)
     except (KeyboardInterrupt, EOFError):
         print("\033[0m\n\nInterrupted — goodbye! 🚀\n")
 
 
-def _main_loop() -> None:
+def _main_loop(mode: str = "full") -> None:
     """The actual interactive session. Extracted from main() so the exception
-    handler in main() stays clean."""
+    handler in main() stays clean.
+
+    mode='full'  — everything visible, default behaviour
+    mode='learn' — algorithms 1-15 + Tutorial + Fog + Hypothesis only;
+                   no Benchmark, Race, Multi-run, Generator, or plugins
+    """
+    _learn = (mode == "learn")
 
     generator_type: str = "dfs"   # cycles via option 22: dfs → kruskal → prim
 
@@ -561,7 +569,38 @@ def _main_loop() -> None:
             if W < 80 or TH < 30 else ""
         )
 
-        if TH >= _FULL_MENU_H:
+        if _learn:
+            # Learn mode: algorithms + Tutorial + Fog + Hypothesis only.
+            # Everything else is hidden so new users aren't overwhelmed.
+            print("\n" + "═" * W)
+            print(_center_ansi("🎓  MAZE SOLVER — LEARN MODE  📚", W))
+            print("═" * W)
+            print(
+                f"  Maze: {size_lbl}"
+                f"  |  Terrain: {terrain_lbl}"
+                f"  |  Fog: {fog_lbl}"
+                f"  |  Diff: {diff_lbl}"
+            )
+            print(
+                f"  {C_DIM}Full experience: run without --learn"
+                f"   |   [t] topology   [n] new maze{C_END}"
+            )
+            print()
+            for _section_name, _specs in _MENU_SECTIONS.items():
+                _bar = "─" * max(0, 49 - len(_section_name))
+                print(f"  ─── {_section_name} {_bar}")
+                for _sp in _specs:
+                    print(f"  {_sp.key:>2}. {_sp.display_name:<20} ({_sp.menu_note})")
+            print("  ─── V5 Post-Run Modes ───────────────────────────────────")
+            print("  (After each run: [h]eatmap  [a]utopsy  [d]uel  ENTER=done)")
+            print("  ─── Learning ────────────────────────────────────────────")
+            print("  17. 📚  Tutorial        (data structures & complexity)")
+            print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
+            print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
+            print("  0.  Exit")
+            print("─" * W)
+
+        elif TH >= _FULL_MENU_H:
             # Full layout — section headers, descriptions, everything
             print("\n" + "═" * W)
             print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
@@ -614,15 +653,27 @@ def _main_loop() -> None:
                 terrain_active, fog_mode, hypothesis_mode,
                 _plugins,
                 gen_lbl,
+                size_lbl,
+                diff_lbl,
             )
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
-        _plug_hint = f" or {'/'.join(_plugins)}" if _plugins else ""
+        _plug_hint = f" or {'/'.join(_plugins)}" if _plugins and not _learn else ""
         _no_maze   = my_maze is None
         choice     = input(
-            f"Choose an option (0–{max(22, _max_algo)}{_plug_hint}"
+            f"Choose an option (0–{max(22, _max_algo) if not _learn else '19'}{_plug_hint}"
             f"{', n=new maze' if not _no_maze else ''}): "
         ).strip()
+
+        # In learn mode silently redirect any hidden advanced option so
+        # the user gets a helpful message rather than "invalid option".
+        if _learn and choice in {"16", "20", "21", "22"}:
+            print(
+                f"  {C_DIM}That option is not available in learn mode."
+                f"  Run without --learn for the full experience.{C_END}"
+            )
+            time.sleep(1.2)
+            continue
 
         if choice == "0":
             print("\nGoodbye! 🚀\n")
