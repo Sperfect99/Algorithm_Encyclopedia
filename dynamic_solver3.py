@@ -18,6 +18,10 @@ import time
 from typing import Generator
 
 from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES   # type: ignore[import]
+from dynamic_gen3      import (
+    setup_dynamic_map, get_passable_neighbors, wander_target,
+    perturb_maze,
+)
 
 from core.types        import PursuitResult
 from ui.theme          import (
@@ -183,6 +187,7 @@ def _dispatch(
     wall_schedule:        list[tuple[int, tuple[int, int]]],
     lookahead:            int = 5,
     repair_threshold:     int = 3,
+    dyn_walls:            bool = False,
 ) -> PursuitResult:
     """Dispatch menu choice → pursuit generator → animation driver."""
     name = _ALGO_NAMES[choice]
@@ -202,8 +207,24 @@ def _dispatch(
             wall_schedule, lookahead,
         )
 
+    # Build a perturb closure if dynamic walls are active.
+    # Uses a single-element list as a mutable counter so the closure
+    # can update it without needing nonlocal (works in Python 3.9+).
+    perturb_fn = None
+    if dyn_walls:
+        _countdown = [random.randint(3, 8)]
+        def perturb_fn(agent_pos: tuple, target_pos: tuple) -> list:  # type: ignore[misc]
+            _countdown[0] -= 1
+            if _countdown[0] <= 0:
+                _countdown[0] = random.randint(3, 8)
+                return perturb_maze(maze, 1, agent_pos, target_pos)
+            return []
+
     try:
-        result = run_pursuit_animation(gen, maze, skip_frames, delay, name, _ACTIVE_COMPLEXITY)
+        result = run_pursuit_animation(
+            gen, maze, skip_frames, delay, name,
+            _ACTIVE_COMPLEXITY, perturb_fn=perturb_fn,
+        )
     finally:
         _ACTIVE_COMPLEXITY[0] = ""
     return result
@@ -513,6 +534,7 @@ def _main_loop() -> None:
     wall_schedule: list[tuple[int, tuple[int, int]]] = []
     lookahead:     int                               = 5
     threshold:     int                               = 3
+    dyn_walls:     bool                              = False   # oscillating walls toggle
 
     while True:
         rows, cols = len(maze), len(maze[0])
@@ -529,6 +551,7 @@ def _main_loop() -> None:
             f"\033[38;5;208m{len(wall_schedule)} walls{C_END}"
             if wall_schedule else f"{C_DOT}none{C_END}"
         )
+        dynw_lbl = f"{C_TARGET}ON{C_END} " if dyn_walls else f"{C_DOT}OFF{C_END}"
 
         W = _term_width()
         print("\n" + "═" * W)
@@ -544,6 +567,7 @@ def _main_loop() -> None:
             f"  |  Walls: {walls_lbl}"
             f"  |  Lookahead: {C_INTERCEPT}{lookahead}{C_END}"
             f"  |  Threshold: {C_BIGO}{threshold}{C_END}"
+            f"  |  Dyn.Walls: {dynw_lbl}"
         )
         print(
             f"  {C_PATH}►{C_END} Agent:  {agent_start}"
@@ -558,21 +582,21 @@ def _main_loop() -> None:
         print("  ─── Session ──────────────────────────────────────────")
         print("  4.  ⚔️  Algorithm Comparison  (all 3 on same scenario)")
         print("  5.  ⚙️  Configure Scenario    (target / walls / params)")
+        print(f"  7.  🧱  Dynamic Walls         — {dynw_lbl}  (walls oscillate every 3-8 steps)")
         print("  6.  📚  Tutorial")
         print("  0.  Exit")
         print("─" * W)
 
-        choice = input("Choose (0–6): ").strip()
+        choice = input("Choose (0–7): ").strip()
 
         # ── Algorithm run ─────────────────────────────────────────────────
         if choice in ("1", "2", "3"):
             name      = _ALGO_NAMES[choice]
             maze_copy = [row[:] for row in maze]
-            # wall_schedule coordinates were built for the current agent_start/target_start.
-            # They remain valid as long as neither is regenerated (new maze resets both).
             result    = _dispatch(
                 choice, maze_copy, agent_start, target_start,
-                delay, skip_frames, evasive, wall_schedule, lookahead, threshold,
+                delay, skip_frames, evasive, wall_schedule,
+                lookahead, threshold, dyn_walls,
             )
 
             flush_stdin()
@@ -595,6 +619,18 @@ def _main_loop() -> None:
             )
             print(f"\n  Scenario updated.  Target: {'Evasive' if evasive else 'Random'}")
             time.sleep(0.8)
+            continue
+
+        elif choice == "7":
+            dyn_walls = not dyn_walls
+            status = f"{C_TARGET}ENABLED{C_END}" if dyn_walls else f"{C_DOT}DISABLED{C_END}"
+            print(f"\n  🧱 Dynamic Walls {status}.")
+            if dyn_walls:
+                print(
+                    f"  {C_DOT}Walls will oscillate randomly every 3-8 hunter steps.\n"
+                    f"  Watch how Dynamic Repair reacts when its path is broken.{C_END}"
+                )
+            time.sleep(0.9)
             continue
 
         elif choice == "6":
@@ -620,6 +656,7 @@ def _main_loop() -> None:
                 wall_schedule = []
                 lookahead     = 5
                 threshold     = 3
+                dyn_walls     = False
                 maze_copy     = []
                 break
             elif ans in {'n', 'no', ''}:

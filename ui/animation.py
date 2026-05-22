@@ -384,11 +384,17 @@ def run_pursuit_animation(
     delay:             float,
     algo_name:         str,
     active_complexity: list[str],
+    perturb_fn:        "Callable[[tuple, tuple], list] | None" = None,
 ) -> PursuitResult:
     """Drive a pursuit generator to completion.
 
     Handles: "step" (movement tick), "replan" (path recalculated),
     "caught" (agent reached target), "done" (terminal).
+
+    perturb_fn — optional callable(agent_pos, target_pos) → list[changed_cells].
+    When provided it is called after every step; the callback decides internally
+    when to actually mutate the maze (random interval). Returned cells are
+    highlighted as dynamic walls in the next render frame.
     """
     # Track the last rendered positions for the terminal "done" render.
     # The "done" yield only carries result + message, not positions,
@@ -398,6 +404,7 @@ def run_pursuit_animation(
     _last_path:        list[tuple[int, int]]  = []
     _last_intercept:   tuple[int, int] | None = None
     _last_extra_walls: set[tuple[int, int]]   = set()
+    _dyn_changed:      set[tuple[int, int]]   = set()   # cells changed by perturb_fn
 
     for state in gen:
         stype = state["type"]
@@ -409,7 +416,7 @@ def run_pursuit_animation(
             path        = state.get("path", [])
             replans     = state.get("replans", 0)
             intercept   = state.get("intercept", None)
-            extra_walls = state.get("extra_walls", set())
+            extra_walls = state.get("extra_walls", set()) | _dyn_changed
 
             is_replan = (stype == "replan")
             is_caught = (stype == "caught")
@@ -457,6 +464,14 @@ def run_pursuit_animation(
                     pause = max(delay, _PURSUIT_CAUGHT_HOLD)
                 if pause > 0:
                     precise_sleep(pause)
+
+            # Call perturb_fn after the frame is rendered so the visual
+            # update for wall changes appears on the next step, not this one.
+            if perturb_fn is not None and stype == "step":
+                changed = perturb_fn(agent_pos, target_pos)
+                _dyn_changed = set(changed)
+            elif stype != "step":
+                _dyn_changed = set()
 
             # Only update path/intercept/walls on "step" and "replan".
             # The "caught" yield omits those keys intentionally — overwriting
