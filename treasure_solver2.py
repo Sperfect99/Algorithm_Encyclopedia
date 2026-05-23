@@ -16,7 +16,7 @@ from treasure_gen import generate_treasure_map, MAZE_SIZES
 
 from maze_genV4   import maze_analyse, MazeStats, _GEN_CYCLE, GENERATORS
 from maze_views   import show_topology_panel
-from maze_modes   import save_maze
+from maze_modes   import save_maze, export_maze_ascii
 
 from core.types        import TreasureRunResult, _StepRecord
 from ui.theme          import (                                # noqa: F401,F403
@@ -731,7 +731,7 @@ def setup_treasure_maze(
     for i, gen in enumerate(_GEN_CYCLE, 1):
         print(f"  {i})  {GENERATORS[gen]}")
     gen_raw = input(f"\n  Choose (1-3) or ENTER to keep [{generator_type.upper()}]: ").strip()
-    if gen_raw in {"1", "2", "3"}:
+    if gen_raw in {str(i) for i in range(1, len(_GEN_CYCLE) + 1)}:
         generator_type = _GEN_CYCLE[int(gen_raw) - 1]
 
     delay, skip_frames = _prompt_speed()
@@ -879,7 +879,7 @@ def _main_loop() -> None:
         print("  4.  🏆  Benchmark        (all algorithms, same maze, comparison)")
         print("  5.  📚  Tutorial         (TSP theory, Big-O, algorithm deep-dives)")
         print(f"  {C_DOT}[g] Generator: {gen_lbl}  [{' → '.join(_GEN_CYCLE)}]"
-              f"   [t] Topology   [n] New maze{C_END}")
+              f"   [t] Topology   [x] Export ASCII   [n] New maze{C_END}")
         print("  0.  Exit")
         print("─" * W)
         print(
@@ -904,6 +904,14 @@ def _main_loop() -> None:
         elif choice.lower() == "t":
             if _stats:
                 show_topology_panel(_stats, generator_type, rows, cols)
+            continue
+
+        elif choice.lower() == "x":
+            if my_maze is not None:
+                path = export_maze_ascii(my_maze, generator_type, _stats.difficulty if _stats else -1, _stats)
+                if path:
+                    print(f"  ✅ Exported to {path}")
+                time.sleep(0.8)
             continue
 
         elif choice.lower() == "n":

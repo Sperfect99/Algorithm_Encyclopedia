@@ -62,6 +62,7 @@ from maze_modes import (
     run_multi_stats,
     save_maze,
     load_maze,
+    export_maze_ascii,
 )
 
 
@@ -256,7 +257,7 @@ def setup_new_maze(
                         f"\n  Resize before running if it looks off."
                     )
                 delay, skip_frames = _prompt_speed()
-                return maze, delay, skip_frames, terrain_active, generator_type
+                return maze, delay, skip_frames, terrain_active, loaded_gen
             continue
         try:
             comp = int(raw)
@@ -465,7 +466,7 @@ def _compact_menu(
         f"  16.🏆Benchmark  17.📚Tutorial"
         f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
         f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats  22.🗺️Gen:{gen_lbl}"
-        f"  {C_DIM}[n]New  [t]Topo{C_END}"
+        f"  {C_DIM}[n]New  [t]Topo  [x]Export{C_END}"
     )
     print(
         f"     🌿 Terrain: {terrain_lbl}"
@@ -636,7 +637,7 @@ def _main_loop(mode: str = "full") -> None:
             print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
             print(f"  22. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
-            print(f"  {C_DIM}[n] New maze   [t] Topology{C_END}")
+            print(f"  {C_DIM}[n] New maze   [t] Topology   [x] Export ASCII{C_END}")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
             print("  0.  Exit")
@@ -690,6 +691,16 @@ def _main_loop(mode: str = "full") -> None:
                 print(f"  {C_BACK}No maze yet — pick an algorithm first.{C_END}")
             else:
                 show_topology_panel(_stats, generator_type, rows, cols)
+            continue
+
+        elif choice.lower() == "x":
+            if my_maze is None:
+                print(f"  {C_BACK}No maze yet — pick an algorithm first.{C_END}")
+            else:
+                path = export_maze_ascii(my_maze, generator_type, _diff, _stats)
+                if path:
+                    print(f"  ✅ Exported to {C_PATH}{path}{C_END}")
+                time.sleep(0.8)
             continue
 
         elif choice == "16":

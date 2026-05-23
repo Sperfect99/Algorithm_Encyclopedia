@@ -20,7 +20,7 @@ from typing import Generator
 from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES   # type: ignore[import]
 from maze_genV4        import maze_analyse, MazeStats, _GEN_CYCLE, GENERATORS
 from maze_views        import show_topology_panel
-from maze_modes        import save_maze, load_maze
+from maze_modes        import save_maze, load_maze, export_maze_ascii
 from dynamic_gen3      import (
     setup_dynamic_map, get_passable_neighbors, wander_target,
     perturb_maze,
@@ -497,7 +497,7 @@ def setup_new_session(
     for i, gen in enumerate(_GEN_CYCLE, 1):
         print(f"  {i})  {GENERATORS[gen]}")
     gen_raw = input(f"\n  Choose (1-3) or ENTER to keep [{generator_type.upper()}]: ").strip()
-    if gen_raw in {"1", "2", "3"}:
+    if gen_raw in {str(i) for i in range(1, len(_GEN_CYCLE) + 1)}:
         generator_type = _GEN_CYCLE[int(gen_raw) - 1]
 
     delay, skip_frames = _prompt_speed()
@@ -622,7 +622,7 @@ def _main_loop() -> None:
         print("  4.  ⚔️  Algorithm Comparison  (all 3 on same scenario)")
         print("  5.  ⚙️  Configure Scenario    (target / walls / params)")
         print(f"  7.  🧱  Dynamic Walls         — {dynw_lbl}  (walls oscillate every 3-8 steps)")
-        print(f"  {C_DOT}[g] Generator: {gen_lbl}   [t] Topology   [s] Save maze{C_END}")
+        print(f"  {C_DOT}[g] Generator: {gen_lbl}   [t] Topology   [s] Save   [x] Export ASCII{C_END}")
         print("  6.  📚  Tutorial")
         print("  0.  Exit")
         print("─" * W)
@@ -644,6 +644,14 @@ def _main_loop() -> None:
             path = save_maze(maze, terrain_active, generator_type)
             if path:
                 print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
+            time.sleep(0.8)
+            continue
+
+        elif choice.lower() == "x":
+            if maze is not None:
+                path = export_maze_ascii(maze, generator_type, _stats.difficulty if _stats else -1, _stats)
+                if path:
+                    print(f"  ✅ Exported to {C_PATH}{path}{C_END}")
             time.sleep(0.8)
             continue
 

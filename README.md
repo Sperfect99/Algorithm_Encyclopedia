@@ -257,7 +257,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - [x] **ASCII bar chart** — visual step-count comparison directly in the terminal after Benchmark
 - [ ] **Benchmark history viewer** — reads all CSVs from `benchmark_exports/` and shows aggregate trends across sessions
 - [ ] **Session statistics** — end-of-session summary: runs count, most-used algorithm, best efficiency seen
-- [ ] **Export maze as ASCII text** — saves the current maze as a `.txt` file for documentation or sharing
+- [x] **Export maze as ASCII text** — saves the current maze as a `.txt` file for documentation or sharing
 - [ ] **Big-O regression** — runs an algorithm across complexity levels, fits a curve, reports whether it behaves as O(n), O(n log n), or O(n²)
 - [ ] **Operations count** — counts node expansions, edge relaxations, heap operations instead of milliseconds — hardware-agnostic scoring that stays consistent across machines
 
@@ -280,7 +280,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] Side-by-side heatmaps — two heatmaps next to each other, same maze, two different algorithms
 - [x] Maze topology analyzer — shows dead-end count, branching factor, longest corridor after generation
 - [ ] Node expansion visualizer — visit counter on each cell, particularly revealing for IDA\*
-- [ ] Pursuit: dynamic wall perturbation as a toggleable mode
+- [x] Pursuit: dynamic wall perturbation as a toggleable mode
 
 *Learning tools*
 - [ ] Algorithm tournament — automated round-robin across all algorithms on the same maze, leaderboard per metric

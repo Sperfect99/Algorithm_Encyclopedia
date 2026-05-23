@@ -158,6 +158,96 @@ def save_maze(
         return None
 
 
+_ASCII_EXPORT_DIR: str = "ascii_exports"
+
+# Cell → single ASCII character. Walls are # so the file is readable in
+# any text editor or terminal without needing Unicode block characters.
+_ASCII_CELL: dict[int | str, str] = {
+    0:   ".",
+    1:   "#",
+    "~": "~",
+    "S": "S",
+    "E": "E",
+    "T": "T",   # treasure markers in TSP mazes
+}
+
+
+def export_maze_ascii(
+    maze:      list[list[int | str]],
+    generator: str                = "dfs",
+    maze_diff: int                = -1,
+    stats:     "MazeStats | None" = None,
+) -> str | None:
+    """Export the current maze as a human-readable ASCII .txt file.
+
+    Writes to ascii_exports/ with a datestamp filename. The file includes
+    a metadata header (size, generator, difficulty, topology stats) and a
+    legend so the file makes sense without any other context.
+
+    Returns the path written, or None if the write failed.
+    """
+    from maze_genV4 import MAZE_SIZES
+
+    rows, cols = len(maze), len(maze[0])
+    complexity = next(
+        (k for k, (r, c) in MAZE_SIZES.items() if r == rows and c == cols),
+        0,
+    )
+
+    os.makedirs(_ASCII_EXPORT_DIR, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path  = os.path.join(_ASCII_EXPORT_DIR, f"{stamp}_c{complexity}.txt")
+
+    sep   = "═" * 52
+    band  = (
+        "easy"   if maze_diff <= 25 else
+        "medium" if maze_diff <= 50 else
+        "hard"   if maze_diff <= 75 else
+        "brutal"
+    ) if maze_diff >= 0 else "—"
+    diff_str = f"{maze_diff}/100  ({band})" if maze_diff >= 0 else "—"
+
+    lines: list[str] = [
+        sep,
+        "  Maze Export — Algorithm Encyclopedia",
+        f"  Size      : {rows} × {cols}   (complexity {complexity})",
+        f"  Generator : {generator.upper()}",
+        f"  Difficulty: {diff_str}",
+    ]
+
+    if stats:
+        lines += [
+            f"  Dead ends : {stats.dead_ends}  ({stats.dead_end_pct:.1f}% of passable)",
+            f"  Junctions : {stats.junctions}  ({stats.junction_pct:.1f}% of passable)",
+            f"  Avg exits : {stats.avg_exits:.1f} per cell",
+            f"  Corridor  : {stats.longest_corridor} cells (longest straight run)",
+            f"  BFS path  : {stats.bfs_path} hops  S → E",
+        ]
+
+    lines += [
+        f"  Exported  : {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        sep,
+        "",
+        "  Legend:  # = wall   . = open   S = start   E = exit   ~ = mud terrain",
+        "",
+    ]
+
+    # Grid — each cell becomes one character, rows separated by newlines.
+    # Unknown cell values fall back to '?' so a bug is obvious in the file.
+    for row in maze:
+        lines.append("  " + "".join(_ASCII_CELL.get(cell, "?") for cell in row))
+
+    lines.append("")   # trailing newline
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        return path
+    except OSError as exc:
+        print(f"\n  ⚠️  Couldn't export maze: {exc}")
+        return None
+
+
 def load_maze() -> tuple[list[list[int | str]], bool, str] | None:
     """List all .maze files from both saved_mazes/ and benchmark_exports/,
     let the user pick one, and return (maze, terrain_active, generator).
