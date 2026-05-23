@@ -169,6 +169,9 @@ _ASCII_CELL: dict[int | str, str] = {
     "S": "S",
     "E": "E",
     "T": "T",   # treasure markers in TSP mazes
+    "@": "@",   # frontier cells drawn mid-run (shouldn't appear on export, but safe)
+    "P": "P",   # solution path overlay
+    "c": "c",   # collected treasure
 }
 
 

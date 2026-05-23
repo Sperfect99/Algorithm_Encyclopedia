@@ -106,6 +106,77 @@ def _clear_active_diff() -> None:
     _ACTIVE_DIFF_SLOT[0] = -1
 
 
+# --- HEURISTIC STATE ---
+
+# Import presets list from astar so we don't duplicate the definitions.
+# Loaded lazily on first access to avoid a circular import at startup.
+def _get_heuristic_presets() -> list[tuple[str, bool, object]]:
+    """Load the preset list from astar.py. Falls back to manhattan-only
+    if the import fails so the session can still start normally.
+    """
+    try:
+        from algorithms.pathfinding.astar import HEURISTIC_PRESETS
+        return HEURISTIC_PRESETS
+    except ImportError:
+        import math
+        return [("Manhattan |Δr|+|Δc|", True,
+                 lambda r,c,gr,gc,m: abs(gr-r)+abs(gc-c))]
+
+
+def _discover_heuristic_plugins() -> dict[str, tuple[str, object]]:
+    """Scan custom/heuristics/ for .py files that expose heuristic().
+
+    Returns {letter_key: (display_name, callable)} — keys start at 'a'.
+    Files whose names start with '_' are skipped (template, __init__, etc.).
+    A plugin that fails to import is logged and skipped.
+    """
+    import os, importlib.util
+
+    plugin_dir = os.path.join(os.path.dirname(__file__), "custom", "heuristics")
+    try:
+        os.makedirs(plugin_dir, exist_ok=True)
+    except OSError:
+        return plugins   # read-only filesystem — just skip plugins silently
+
+    plugins: dict[str, tuple[str, object]] = {}
+    _reserved = {'n', 't', 'x', 'h', 'g'}  # skip keys already bound in the main menu
+    letters  = iter(k for k in "abcdefghijklmnopqrstuvwxyz" if k not in _reserved)
+
+    try:
+        entries = sorted(f for f in os.listdir(plugin_dir)
+                         if f.endswith(".py") and not f.startswith("_"))
+    except OSError:
+        return plugins
+
+    for fname in entries:
+        key  = next(letters, None)
+        if key is None:
+            break
+        name = fname[:-3]
+        path = os.path.join(plugin_dir, fname)
+        try:
+            spec   = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+            spec.loader.exec_module(module)                  # type: ignore[union-attr]
+            fn = getattr(module, "heuristic", None)
+            if callable(fn):
+                # Quick smoke-test — wrong signature or a divide-by-zero
+                # in the formula surfaces here, not mid-run.
+                try:
+                    result = fn(0, 0, 1, 1, [[0]])
+                    if not isinstance(result, (int, float)):
+                        raise TypeError(
+                            f"heuristic() must return a number, got {type(result).__name__}"
+                        )
+                    plugins[key] = (name, fn)
+                except Exception as exc:
+                    print(f"  ⚠️  Plugin {fname} rejected: {exc}")
+        except Exception as exc:
+            print(f"  ⚠️  Heuristic plugin {fname} failed to load: {exc}")
+
+    return plugins
+
+
 
 # --- AUTOPSY RECORDING STATE ---
 
@@ -128,18 +199,19 @@ def _stop_recording() -> list[_StepRecord]:
 # --- ALGORITHM DISPATCH ---
 
 def _dispatch_algorithm(
-    choice:      str,
-    maze:        list[list[int | str]],
-    delay:       float,
-    skip_frames: int,
-    fog:         set[tuple[int, int]] | None,
-    visit_count: dict[tuple[int, int], int] | None,
+    choice:       str,
+    maze:         list[list[int | str]],
+    delay:        float,
+    skip_frames:  int,
+    fog:          set[tuple[int, int]] | None,
+    visit_count:  dict[tuple[int, int], int] | None,
+    heuristic_fn: object | None = None,
 ) -> RunResult:
     """Route a menu choice string to the matching generator and run it.
 
     Also handles the large-maze warning for slow algorithms (driven by the
     AlgorithmSpec so we don't need any hardcoded algorithm names here).
-    The generators themselves are UI-free — this is where the advisory lives.
+    heuristic_fn is only forwarded when the selected algorithm is A*.
     """
     vc: dict[tuple[int, int], int] = visit_count if visit_count is not None else {}
     spec      = _SPEC_BY_KEY[choice]
@@ -157,7 +229,15 @@ def _dispatch_algorithm(
             input()
 
     factory = _get_generator(spec.module_name)
-    gen = factory(maze, fog=fog, visit_count=vc)  # type: ignore[operator]
+
+    # A* is the only algorithm with a swappable heuristic. Pass it through
+    # as a keyword arg when provided; other algorithms ignore unknown kwargs
+    # since they use positional-only or **kwargs signatures.
+    if spec.module_name == "astar" and heuristic_fn is not None:
+        gen = factory(maze, fog=fog, visit_count=vc, heuristic_fn=heuristic_fn)
+    else:
+        gen = factory(maze, fog=fog, visit_count=vc)  # type: ignore[operator]
+
     return run_algorithm(
         gen, maze, skip_frames, delay, algo_name,
         _ACTIVE_COMPLEXITY_SLOT, _ACTIVE_RECORDING,
@@ -320,7 +400,8 @@ def _discover_plugins() -> dict[str, dict]:
     os.makedirs(custom_dir, exist_ok=True)
 
     plugins: dict[str, dict] = {}
-    letters = "abcdefghijklmnopqrstuvwxyz"
+    _reserved = {'n', 't', 'x', 'h', 'g'}  # skip keys already bound in the main menu
+    letters   = [k for k in "abcdefghijklmnopqrstuvwxyz" if k not in _reserved]
     idx     = 0
 
     for fname in sorted(os.listdir(custom_dir)):
@@ -415,6 +496,7 @@ def _compact_menu(
     gen_lbl:        str = "",
     size_lbl:       str = "",
     diff_lbl:       str = "",
+    h_lbl:          str = "",
 ) -> None:
     """2-column algorithm grid for short terminals.
 
@@ -440,6 +522,8 @@ def _compact_menu(
         f"  |  Gen: {gen_lbl}"
         f"  |  Diff: {diff_lbl}"
     )
+    if h_lbl:
+        print(f"  {C_DIM}A* heuristic: {h_lbl}{C_END}")
     print("─" * W)
 
     for i, s1 in enumerate(col1):
@@ -529,6 +613,16 @@ def _main_loop(mode: str = "full") -> None:
         )
         time.sleep(0.8)
 
+    # Heuristic state — presets from astar.py, plugins from custom/heuristics/
+    # Index 0 = Manhattan (default). Rebuilt on each session start so new
+    # plugin files are picked up without restarting the whole program.
+    _heuristic_presets  = _get_heuristic_presets()   # list of (label, admissible, fn)
+    _heuristic_plugins  = _discover_heuristic_plugins()
+    _active_h_idx: int  = 0                           # index into presets; -1 = plugin
+    _active_h_key: str  = ""                          # plugin letter key when idx == -1
+    _active_h_fn        = _heuristic_presets[0][2]    # callable — starts as manhattan
+    _active_h_label     = _heuristic_presets[0][0].split()[0]  # short name for info bar
+
     fog_mode:        bool                         = False
     hypothesis_mode: bool                         = False
     hyp_pts:         int                          = 0
@@ -548,6 +642,13 @@ def _main_loop(mode: str = "full") -> None:
         gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
         _dc         = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
         diff_lbl    = f"{_dc}{_diff:>3}{C_END}" if _diff >= 0 else f"{C_DIM} — {C_END}"
+        if _active_h_idx < 0:
+            _adm = "?"   # plugin — admissibility unknown until proven
+        elif _heuristic_presets[_active_h_idx][1]:
+            _adm = "✓"
+        else:
+            _adm = "✗"
+        h_lbl       = f"{C_BIGO}{_active_h_label}{C_END} {C_DIM}{_adm}{C_END}"
         hyp_lbl     = (
             f"{C_HYP}ON{C_END}  Score: {C_HYP}{hyp_pts}/{hyp_max_pts} pts{C_END}"
             if hypothesis_mode else f"{C_DOT}OFF{C_END}"
@@ -616,6 +717,7 @@ def _main_loop(mode: str = "full") -> None:
                 f"  |  Gen: {gen_lbl}"
                 f"  |  Diff: {diff_lbl}"
             )
+            print(f"  {C_DIM}A* heuristic: {h_lbl}   [h] to change{C_END}")
             print()
 
             for _section_name, _specs in _MENU_SECTIONS.items():
@@ -656,6 +758,7 @@ def _main_loop(mode: str = "full") -> None:
                 gen_lbl,
                 size_lbl,
                 diff_lbl,
+                h_lbl,
             )
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
@@ -683,6 +786,74 @@ def _main_loop(mode: str = "full") -> None:
         # [n] — generate a new maze from scratch
         elif choice.lower() == "n":
             _setup_maze()
+            continue
+
+        # [h] — pick A* heuristic (preset or user plugin)
+        elif choice.lower() == "h":
+            clear_screen()
+            W = _term_width()
+            print("\n" + "═" * W)
+            print(_center_ansi("🔢  A* HEURISTIC SELECTOR", W))
+            print("═" * W)
+            print(
+                f"\n  {C_DIM}Admissible (✓): h never overestimates — A* returns the optimal path."
+                f"\n  Inadmissible (✗): may return a suboptimal path but usually fewer steps."
+                f"\n  Only affects A*. IDA* and Greedy Best-First have their own fixed heuristics."
+                f"\n  Benchmark and Race Mode always use Manhattan for consistent comparisons.{C_END}\n"
+            )
+            print("  ─── Built-in presets ────────────────────────────────────")
+            for i, (label, admissible, _) in enumerate(_heuristic_presets, 1):
+                marker = f"{C_PATH}✓{C_END}" if admissible else f"{C_BACK}✗{C_END}"
+                active = f"  {C_BIGO}← active{C_END}" if i - 1 == _active_h_idx else ""
+                print(f"  {i}.  {label}  {marker}{active}")
+
+            if _heuristic_plugins:
+                print("\n  ─── Your plugins (custom/heuristics/) ───────────────")
+                for key, (name, _) in _heuristic_plugins.items():
+                    active = f"  {C_BIGO}← active{C_END}" if (
+                        _active_h_idx == -1 and _active_h_key == key
+                    ) else ""
+                    print(f"  {key}.  {name}{active}")
+            else:
+                print(f"\n  {C_DIM}No custom plugins found. Drop a .py file into"
+                      f" custom/heuristics/ to add your own.{C_END}")
+
+            print(f"\n  ENTER = keep current ({_active_h_label})")
+            print("─" * W)
+            flush_stdin()
+            raw = input("  Choice: ").strip()
+
+            if raw == "":
+                pass  # keep current
+            elif raw.isdigit() and 1 <= int(raw) <= len(_heuristic_presets):
+                idx             = int(raw) - 1
+                _active_h_idx   = idx
+                _active_h_key   = ""
+                _active_h_fn    = _heuristic_presets[idx][2]
+                _active_h_label = _heuristic_presets[idx][0].split()[0]
+                adm_str = "admissible ✓" if _heuristic_presets[idx][1] else "inadmissible ✗"
+                print(f"\n  A* heuristic → {C_BIGO}{_active_h_label}{C_END}  ({adm_str})")
+                time.sleep(0.8)
+            elif raw.lower() in _heuristic_plugins:
+                key             = raw.lower()
+                name, fn        = _heuristic_plugins[key]
+                _active_h_idx   = -1
+                _active_h_key   = key
+                _active_h_fn    = fn
+                _active_h_label = name
+                print(f"\n  A* heuristic → {C_BIGO}{name}{C_END}  (admissibility unknown — user-defined)")
+                time.sleep(0.8)
+            else:
+                print("  Invalid choice — heuristic unchanged.")
+                time.sleep(0.7)
+            continue
+
+        # [g] — cycle maze generator DFS → Kruskal → Prim
+        elif choice.lower() == "g":
+            idx_g          = _GEN_CYCLE.index(generator_type)
+            generator_type = _GEN_CYCLE[(idx_g + 1) % len(_GEN_CYCLE)]
+            print(f"\n  🗺️  Generator → {C_PATH}{generator_type.upper()}{C_END}  (takes effect on next maze)")
+            time.sleep(0.7)
             continue
 
         # [t] — show topology panel for the current maze again
@@ -715,7 +886,8 @@ def _main_loop(mode: str = "full") -> None:
             continue
 
         elif choice == "22":
-            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(generator_type) + 1) % len(_GEN_CYCLE)]
+            _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
+            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
             print(f"\n  🗺️  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
             time.sleep(0.7)
             continue
@@ -788,7 +960,8 @@ def _main_loop(mode: str = "full") -> None:
             _start_recording()
             try:
                 result = _dispatch_algorithm(
-                    choice, m_copy, delay, skip_frames, fog, visit_count
+                    choice, m_copy, delay, skip_frames, fog, visit_count,
+                    heuristic_fn=_active_h_fn,
                 )
             finally:
                 recording = _stop_recording()

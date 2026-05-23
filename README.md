@@ -272,7 +272,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - [x] **Custom algorithm plugin system** — `custom/` folder with `_template.py`; drop a file in and it appears in the menu automatically
 - [x] **Maze import/export** — saves maze to disk with complexity / generator / terrain; reload it later
 - [ ] **Run replay from file** — save a full Autopsy recording as JSON and load it in a later session
-- [ ] **Custom heuristic plugin** — write your own heuristic function for A\* and see how it affects path and step count
+- [x] **Custom heuristic plugin** — write your own heuristic function for A\* and see how it affects path and step count
 - [ ] **Custom maze generator plugin** — same plugin system for generators; appears as an option in the generator cycle
 
 *Visualisation*
