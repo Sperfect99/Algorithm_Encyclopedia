@@ -194,48 +194,49 @@ def generate_treasure_map(
     complexity:      int,
     num_treasures:   int,
     terrain_active:  bool,
+    generator:       str = "dfs",
     max_retries:     int = MAX_GEN_RETRIES,
 ) -> tuple[
-    list[list[int | str]],   # maze  (with 'S' at (0,0), 'T' at treasure cells)
-    list[tuple[int, int]],   # points  [S_pos, T1_pos, …, TN_pos]
-    list[list[float]],       # dist_matrix
-    list[list[float]],       # cost_matrix
-    list[list],              # path_matrix
+    list[list[int | str]],
+    list[tuple[int, int]],
+    list[list[float]],
+    list[list[float]],
+    list[list],
 ]:
-    """
-    Generate a complete, solver-ready treasure map.
+    """Generate a complete, solver-ready treasure map.
 
     complexity     : int  — maze complexity level (0–10), forwarded to
                             'generate_maze()'.
     num_treasures  : int  — exact number of treasure cells to scatter.
     terrain_active : bool — whether to apply mud-terrain patches via
                             'add_terrain()'.
+    generator      : str  — maze algorithm: "dfs" | "kruskal" | "prim".
     max_retries    : int  — how many maze seeds to attempt before raising
-                            (default: 'MAX_GEN_RETRIES = 20').
+                            (default: MAX_GEN_RETRIES = 20).
 
     Returns
-    maze         : 2-D grid; cells modified in-place with ''T'' markers.
-    points       : '[S_pos, T1_pos, …, TN_pos]'  (length = num_treasures + 1).
-    dist_matrix  : Weighted terrain cost between all points.
+    maze         : 2-D grid; cells modified in-place with 'T' markers.
+    points       : [S_pos, T1_pos, …, TN_pos]  (length = num_treasures + 1).
+    dist_matrix  : Hop distance between all points.
     cost_matrix  : Weighted terrain cost between all points.
     path_matrix  : Actual cell-by-cell paths between all points.
 
-    Raises:
+    Raises
     RuntimeError
-        If a fully-connected map cannot be produced within *max_retries*
-        attempts (extremely rare; typically maze is regenerated 0–2 times).
+        If a fully-connected map cannot be produced within max_retries
+        attempts (extremely rare; typically the maze is regenerated 0–2 times).
 
     Notes
     -----
-    • This function is **pure generation** — no I/O, no animation.
-    • The caller ('setup_treasure_maze' in 'treasure_solver.py') owns all
+    • This function is pure generation — no I/O, no animation.
+    • The caller (setup_treasure_maze in treasure_solver2.py) owns all
       user-facing prompts and progress messages.
     • Connectivity is guaranteed: every 'T' cell is reachable from 'S'.
       If any treasure is isolated, the maze is silently regenerated.
     """
     for attempt in range(max_retries):
         # ── 1. Generate base maze ─────────────────────────────────────────
-        maze: list[list[int | str]] = generate_maze(complexity)
+        maze: list[list[int | str]] = generate_maze(complexity, generator)
         if terrain_active:
             add_terrain(maze)
 

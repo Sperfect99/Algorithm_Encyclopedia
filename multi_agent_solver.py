@@ -17,7 +17,14 @@ import time
 from typing import Generator
 
 # ── Maze generation (shared with maze_solverV7) ───────────────────────────
-from maze_genV4 import generate_maze, add_terrain, MAZE_SIZES   # type: ignore[import]
+from maze_genV4 import (
+    generate_maze, add_terrain, MAZE_SIZES,
+    maze_analyse, MazeStats, _GEN_CYCLE, GENERATORS,
+)
+
+# ── Topology / save-load (shared utilities) ───────────────────────────────
+from maze_views import show_topology_panel
+from maze_modes import save_maze, load_maze
 
 # ── Core / UI layer ────────────────────────────────────────────────────────
 from core.types        import MapfResult
@@ -297,15 +304,16 @@ def _prompt_speed() -> tuple[float, int]:
         print("  Enter 1–4.")
 
 
-def setup_new_session() -> tuple[
+def setup_new_session(
+    generator_type: str = "dfs",
+) -> tuple[
     list[list[int | str]], float, int, bool,
-    list[tuple[int, int]], list[tuple[int, int]], int,
+    list[tuple[int, int]], list[tuple[int, int]], int, MazeStats,
 ]:
-    """
-    Interactive setup: maze size, speed, terrain, agent count, placement.
+    """Interactive setup: maze size, speed, terrain, agent count, placement.
 
-    Returns:
-        (maze, delay, skip_frames, terrain_active, starts, goals, n_agents)
+    Returns (maze, delay, skip_frames, terrain_active, starts, goals,
+             n_agents, stats).
     """
     clear_screen()
     _SIZE_LABELS = {
@@ -333,6 +341,13 @@ def setup_new_session() -> tuple[
     maze_rows, maze_cols = MAZE_SIZES[comp]
     _check_terminal_size(maze_rows, maze_cols)
 
+    print(f"\nMaze Generator  (current: {generator_type.upper()}):\n")
+    for i, gen in enumerate(_GEN_CYCLE, 1):
+        print(f"  {i})  {GENERATORS[gen]}")
+    gen_raw = input(f"\n  Choose (1-3) or ENTER to keep [{generator_type.upper()}]: ").strip()
+    if gen_raw in {"1", "2", "3"}:
+        generator_type = _GEN_CYCLE[int(gen_raw) - 1]
+
     delay, skip_frames = _prompt_speed()
 
     terrain_active = False
@@ -359,7 +374,7 @@ def setup_new_session() -> tuple[
     n_agents = n
 
     print("\n⏳ Generating maze… Please wait!")
-    maze = generate_maze(comp)
+    maze = generate_maze(comp, generator_type)
     if terrain_active:
         add_terrain(maze)
 
@@ -373,7 +388,10 @@ def setup_new_session() -> tuple[
             f"    Agent {i}: start={col}{s}{C_END}  →  goal={gcol}{g}{C_END}"
         )
 
-    return maze, delay, skip_frames, terrain_active, starts, goals, n_agents
+    stats = maze_analyse(maze)
+    show_topology_panel(stats, generator_type, len(maze), len(maze[0]))
+
+    return maze, delay, skip_frames, terrain_active, starts, goals, n_agents, stats, generator_type
 
 
 # ===========================================================================
@@ -390,10 +408,27 @@ def main() -> None:
 
 def _main_loop() -> None:
     """Interactive session loop."""
-    maze, delay, skip_frames, terrain_active, starts, goals, n_agents = setup_new_session()
+
+    generator_type: str = "dfs"
+
+    def _setup() -> None:
+        nonlocal maze, delay, skip_frames, terrain_active
+        nonlocal starts, goals, n_agents, _stats, generator_type
+        result = setup_new_session(generator_type)
+        maze, delay, skip_frames, terrain_active, starts, goals, n_agents, _stats, generator_type = result
+
+    maze:           list[list[int | str]] | None = None
+    starts:         list                         = []
+    goals:          list                         = []
+    delay:          float                        = 0.05
+    skip_frames:    int                          = 1
+    terrain_active: bool                         = False
+    n_agents:       int                          = 2
+    _stats:         MazeStats | None             = None
 
     while True:
-        rows, cols = len(maze), len(maze[0])
+        rows = len(maze) if maze is not None else 0
+        cols = len(maze[0]) if maze is not None else 0
 
         _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
@@ -406,16 +441,22 @@ def _main_loop() -> None:
             else f"{C_DOT}OFF{C_END}"
         )
 
+        gen_lbl     = f"\033[96m{generator_type.upper()}\033[0m"
+
         W = _term_width()
         print("\n" + "═" * W)
         print(_center_ansi("🤖  MULTI-AGENT PATHFINDING  V3  🤖", W))
         print("═" * W)
-        print(
-            f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
-            f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
-            f"  |  Terrain: {terrain_lbl}"
-            f"  |  Agents: {C_HEAD}{n_agents}{C_END}"
-        )
+        if maze is not None:
+            print(
+                f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
+                f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
+                f"  |  Terrain: {terrain_lbl}"
+                f"  |  Agents: {C_HEAD}{n_agents}{C_END}"
+                f"  |  Gen: {gen_lbl}"
+            )
+        else:
+            print(f"  {C_DIM}No maze yet — pick an algorithm to generate one.  |  Gen: {gen_lbl}{C_END}")
         print()
 
         for i, (s, g) in enumerate(zip(starts, goals)):
@@ -435,13 +476,18 @@ def _main_loop() -> None:
         print("  ─── Session ─────────────────────────────────────────")
         print("  4.  ⚔️  Algorithm Comparison  (run all 3, compare metrics)")
         print("  5.  📚  Tutorial")
+        print(f"  {C_DOT}[g] Generator: {gen_lbl}   [t] Topology   [s] Save maze   [n] New maze{C_END}")
         print("  0.  Exit")
         print("─" * W)
 
-        choice = input("Choose (0–5): ").strip()
+        choice = input("Choose (0–5, or g/t/s/n): ").strip()
 
         # ── Algorithm run ─────────────────────────────────────────────────
         if choice in ("1", "2", "3"):
+            if maze is None:
+                _setup()
+                if maze is None:
+                    continue
             name      = _ALGO_NAMES[choice]
             maze_copy = [row[:] for row in maze]
             result    = _dispatch(choice, maze_copy, starts, goals, delay, skip_frames)
@@ -453,12 +499,37 @@ def _main_loop() -> None:
             _show_report_card(name, result, n_agents)
 
         elif choice == "4":
+            if maze is None:
+                print(f"  {C_DIM}Generate a maze first — pick algorithm 1, 2, or 3.{C_END}")
+                continue
             maze_copy = [row[:] for row in maze]
             _run_comparison(maze_copy, starts, goals, n_agents)
             continue
 
         elif choice == "5":
             _show_tutorial()
+            continue
+
+        elif choice.lower() == "g":
+            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(generator_type) + 1) % len(_GEN_CYCLE)]
+            print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
+            time.sleep(0.7)
+            continue
+
+        elif choice.lower() == "t":
+            if _stats:
+                show_topology_panel(_stats, generator_type, rows, cols)
+            continue
+
+        elif choice.lower() == "s":
+            path = save_maze(maze, terrain_active, generator_type)
+            if path:
+                print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
+            time.sleep(0.8)
+            continue
+
+        elif choice.lower() == "n":
+            _setup()
             continue
 
         elif choice == "0":
@@ -474,8 +545,7 @@ def _main_loop() -> None:
         while True:
             ans = input("\n  [ENTER/n] keep this maze   [y] generate new maze: ").strip().lower()
             if ans in {'y', 'yes'}:
-                (maze, delay, skip_frames, terrain_active,
-                 starts, goals, n_agents) = setup_new_session()
+                _setup()
                 maze_copy = []
                 break
             elif ans in {'n', 'no', ''}:

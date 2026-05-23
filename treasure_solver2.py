@@ -14,10 +14,15 @@ from typing import NamedTuple
 
 from treasure_gen import generate_treasure_map, MAZE_SIZES
 
+from maze_genV4   import maze_analyse, MazeStats, _GEN_CYCLE, GENERATORS
+from maze_views   import show_topology_panel
+from maze_modes   import save_maze
+
 from core.types        import TreasureRunResult, _StepRecord
 from ui.theme          import (                                # noqa: F401,F403
     C_WALL, C_DOT, C_BACK, C_HEAD, C_PATH, C_START, C_MUD, C_END,
     C_DUEL2, C_BIGO, C_TREASURE, C_COLLECTED, C_GA_LIVE, C_STAT,
+    C_DIM,
     ansi_enable_windows,
 )
 from ui.terminal_utils import (
@@ -674,34 +679,24 @@ def _prompt_speed() -> tuple[float, int]:
         print("  Please enter 1, 2, 3, or 4.")
 
 
-def setup_treasure_maze() -> tuple[
-    list[list[int | str]],   # maze
-    list[tuple[int, int]],   # points [S, T1..TN]
-    list[list[float]],       # dist_matrix
-    list[list[float]],       # cost_matrix
-    list[list],              # path_matrix
-    float,                   # delay
-    int,                     # skip_frames
-    bool,                    # terrain_active
-    int,                     # n_treasures
+def setup_treasure_maze(
+    generator_type: str = "dfs",
+) -> tuple[
+    list[list[int | str]],
+    list[tuple[int, int]],
+    list[list[float]],
+    list[list[float]],
+    list[list],
+    float,
+    int,
+    bool,
+    int,
+    MazeStats,
 ]:
-    """
-    Full setup wizard: prompt user for all parameters, then delegate map
-    generation to 'generate_treasure_map()' from 'treasure_gen.py'.
+    """Full setup wizard — prompts for all parameters then generates the map.
 
-    V2.0 responsibilities (UI only — unchanged from V1.2):
-      • Prompt: maze complexity level
-      • Prompt: number of treasures
-      • Prompt: animation speed
-      • Prompt: terrain on/off
-      • Print progress messages during generation
-      • Handle RuntimeError from generate_treasure_map gracefully
-
-    Map creation responsibilities (treasure_gen.py — unchanged):
-      • generate_maze() + add_terrain()
-      • scatter_treasures()
-      • build_distance_matrix()
-      • Connectivity verification + silent retry
+    Returns (maze, points, dist_matrix, cost_matrix, path_matrix,
+             delay, skip_frames, terrain_active, n_treasures, stats).
     """
     clear_screen()
     _SIZE_LABELS = {
@@ -729,6 +724,15 @@ def setup_treasure_maze() -> tuple[
 
     maze_rows, maze_cols = MAZE_SIZES[comp]
     _check_terminal_size(maze_rows, maze_cols)
+
+    # Generator selection — shown after complexity so the user sees the size
+    # they picked before deciding on maze topology style.
+    print(f"\nMaze Generator  (current: {generator_type.upper()}):\n")
+    for i, gen in enumerate(_GEN_CYCLE, 1):
+        print(f"  {i})  {GENERATORS[gen]}")
+    gen_raw = input(f"\n  Choose (1-3) or ENTER to keep [{generator_type.upper()}]: ").strip()
+    if gen_raw in {"1", "2", "3"}:
+        generator_type = _GEN_CYCLE[int(gen_raw) - 1]
 
     delay, skip_frames = _prompt_speed()
 
@@ -767,6 +771,7 @@ def setup_treasure_maze() -> tuple[
             complexity=comp,
             num_treasures=n_t,
             terrain_active=terrain_active,
+            generator=generator_type,
         )
     except RuntimeError as exc:
         # Extremely rare — reduce treasure count and try once more.
@@ -778,21 +783,32 @@ def setup_treasure_maze() -> tuple[
                 complexity=comp,
                 num_treasures=n_t,
                 terrain_active=terrain_active,
+                generator=generator_type,
             )
         except RuntimeError as exc2:
             print(f"\n  ❌ Generation failed after retry: {exc2}")
             print("  Please restart and choose a lower complexity or fewer treasures.")
-            raise EOFError from exc2   # surfaces cleanly via the outer handler
+            raise EOFError from exc2
 
-    actual_n = len(points) - 1   # may differ if generate_treasure_map adjusted
+    actual_n = len(points) - 1
     print(f"  ✔ Maze generated: {len(maze)} × {len(maze[0])}")
     print(f"  ✔ {actual_n} treasure(s) placed.")
     print(f"  ✔ Dijkstra cost matrix built ({len(points)} points).")
     time.sleep(0.3)
 
+    # Topology panel — call maze_analyse on the base maze (no T markers) so the
+    # dead-end and junction counts reflect the actual corridor structure.
+    # T markers would otherwise be treated as walls and skew the stats.
+    base_maze = [
+        [0 if cell == 'T' else cell for cell in row]
+        for row in maze
+    ]
+    stats = maze_analyse(base_maze)
+    show_topology_panel(stats, generator_type, len(maze), len(maze[0]))
+
     return (
         maze, points, dist_matrix, cost_matrix, path_matrix,
-        delay, skip_frames, terrain_active, actual_n,
+        delay, skip_frames, terrain_active, actual_n, stats, generator_type,
     )
 
 
@@ -801,22 +817,27 @@ def setup_treasure_maze() -> tuple[
 # ===========================================================================
 
 def _main_loop() -> None:
-    """
-    Inner session loop.  Wrapped by main() for clean KeyboardInterrupt handling.
+    """Inner session loop. Wrapped by main() for clean interrupt handling."""
 
-    V2.0 changes vs V1.2:
-        Algorithm generators imported from algorithms/tsp.py.
-        _dispatch() creates a generator and calls run_tsp_animation() instead
-        of calling a monolithic solve_* function.
-        run_autopsy() calls render_tsp() (from ui.renderer) instead of the
-        old local render() function.
+    generator_type: str = "dfs"
 
-    Post-run menu: [a]utopsy  [d]uel  ENTER=done  (loops until bare ENTER).
-    Session state: last_result, last_maze_after, last_algo_name, recording —
-    all reset on new maze.
-    """
-    (my_maze, points, dist_matrix, cost_matrix, path_matrix,
-     delay, skip_frames, terrain_active, n_treasures) = setup_treasure_maze()
+    def _setup() -> None:
+        nonlocal my_maze, points, dist_matrix, cost_matrix, path_matrix
+        nonlocal delay, skip_frames, terrain_active, n_treasures, _stats, generator_type
+        result = setup_treasure_maze(generator_type)
+        (my_maze, points, dist_matrix, cost_matrix, path_matrix,
+         delay, skip_frames, terrain_active, n_treasures, _stats, generator_type) = result
+
+    my_maze:        list[list[int | str]] | None = None
+    points:         list                         = []
+    dist_matrix:    list                         = []
+    cost_matrix:    list                         = []
+    path_matrix:    list                         = []
+    delay:          float                        = 0.05
+    skip_frames:    int                          = 1
+    terrain_active: bool                         = False
+    n_treasures:    int                          = 0
+    _stats:         MazeStats | None             = None
 
     last_result:     TreasureRunResult | None          = None
     last_maze_after: list[list[int | str]] | None      = None
@@ -824,8 +845,10 @@ def _main_loop() -> None:
     recording:       list[_StepRecord]                 = []
 
     while True:
-        rows, cols  = len(my_maze), len(my_maze[0])
+        rows = len(my_maze) if my_maze is not None else 0
+        cols = len(my_maze[0]) if my_maze is not None else 0
         terrain_lbl = f"{C_MUD}ON {C_END}" if terrain_active else f"{C_DOT}OFF{C_END}"
+        gen_lbl     = f"\033[96m{generator_type.upper()}\033[0m"
         _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
             (n for k, n in _SPEED_NAMES.items()
@@ -838,10 +861,14 @@ def _main_loop() -> None:
         print("\n" + "═" * W)
         print(_center_ansi("🗺️   TREASURE HUNT — TSP SOLVER   V2.0   🗺️", W))
         print("═" * W)
-        print(
-            f"  Maze: {rows} × {cols}  |  Speed: {C_DOT}{speed_lbl}{C_END}"
-            f"  |  Treasures: {n_treasures}  |  Terrain: {terrain_lbl}"
-        )
+        if my_maze is not None:
+            print(
+                f"  Maze: {rows} × {cols}  |  Speed: {C_DOT}{speed_lbl}{C_END}"
+                f"  |  Treasures: {n_treasures}  |  Terrain: {terrain_lbl}"
+                f"  |  Gen: {gen_lbl}"
+            )
+        else:
+            print(f"  {C_DIM}No maze yet — pick an algorithm to generate one.  |  Gen: {gen_lbl}{C_END}")
         print()
         print("  ─── TSP Algorithms ──────────────────────────────────────────")
         print(f"  1.  {C_DOT}Nearest Neighbour{C_END}   (Greedy, O(N²·V), fastest 1st find)")
@@ -851,6 +878,8 @@ def _main_loop() -> None:
         print("  ─── System ──────────────────────────────────────────────────")
         print("  4.  🏆  Benchmark        (all algorithms, same maze, comparison)")
         print("  5.  📚  Tutorial         (TSP theory, Big-O, algorithm deep-dives)")
+        print(f"  {C_DOT}[g] Generator: {gen_lbl}  [{' → '.join(_GEN_CYCLE)}]"
+              f"   [t] Topology   [n] New maze{C_END}")
         print("  0.  Exit")
         print("─" * W)
         print(
@@ -858,13 +887,31 @@ def _main_loop() -> None:
         )
         print("─" * W)
 
-        choice = input("Choose (0–5): ").strip()
+        choice = input("Choose (0–5, or g/t/n): ").strip()
 
         # ── System options ─────────────────────────────────────────────────
 
         if choice == "0":
             print(f"\n  {C_TREASURE}Goodbye — may your tours always be optimal! 🗺️{C_END}\n")
             break
+
+        elif choice.lower() == "g":
+            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(generator_type) + 1) % len(_GEN_CYCLE)]
+            print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
+            time.sleep(0.7)
+            continue
+
+        elif choice.lower() == "t":
+            if _stats:
+                show_topology_panel(_stats, generator_type, rows, cols)
+            continue
+
+        elif choice.lower() == "n":
+            _setup()
+            last_result = last_maze_after = None
+            last_algo_name = ""
+            recording = []
+            continue
 
         elif choice == "4":
             maze_bench = [row[:] for row in my_maze]
@@ -880,6 +927,12 @@ def _main_loop() -> None:
             continue
 
         elif choice in _ALGO_NAMES:
+            # First time picking an algorithm — need a maze
+            if my_maze is None:
+                _setup()
+                if my_maze is None:
+                    continue
+
             algo_name = _ALGO_NAMES[choice]
 
             # Build a fresh maze copy with treasures in place.
@@ -955,8 +1008,7 @@ def _main_loop() -> None:
         while True:
             ans = input("\n  [ENTER/n] keep this map   [y] generate new map: ").strip().lower()
             if ans in {'y', 'yes'}:
-                (my_maze, points, dist_matrix, cost_matrix, path_matrix,
-                 delay, skip_frames, terrain_active, n_treasures) = setup_treasure_maze()
+                _setup()
                 last_result     = None
                 last_maze_after = None
                 last_algo_name  = ""
