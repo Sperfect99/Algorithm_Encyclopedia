@@ -78,7 +78,7 @@ S█~  █ █   █*****█   █   █   █
 |-----------|:--------:|:-----------:|-------|-------|
 | BFS | ✅ hops | ❌ | O(V) | Fewest hops, ignores terrain cost |
 | DFS | ❌ | ❌ | O(V) | Memory-efficient, path quality suffers |
-| A\* | ✅ cost | ✅ | O(V) | f = g(cost) + h(manhattan) |
+| A\* | ✅ cost | ✅ | O(V) | f = g(cost) + h(manhattan) — heuristic swappable |
 | Dijkstra | ✅ cost | ✅ | O(V) | A\* with h = 0 — expands radially |
 | Greedy Best-First | ❌ | ❌ | O(V) | f = h only. Charges through mud |
 | Bidirectional BFS | ≈ hops | ❌ | O(V) | Two frontiers from S and E |
@@ -131,21 +131,50 @@ One agent chases a target that actively flees. The target moves every tick. The 
 - Big-O HUD — time and space complexity shown on screen during every run
 - Priority Queue Inspector — live top-3 heap entries for A\*, Dijkstra, Greedy (lets you see what the algorithm is "thinking")
 - Fog of War — hides unvisited cells so you only see the search frontier expanding
+- Maze difficulty score — a 0–100 score based on dead ends, tortuosity, and branching shown in the HUD and report card
+- Topology panel — dead-end count, junction density, branching factor, and longest corridor shown after each generation
 
 **Comparison tools**
 - **Algorithm Duel** — two paths overlaid on the same maze; shared cells, A-only cells, and B-only cells each get a distinct colour
 - **Race Mode** — split-screen simultaneous replay of two algorithms on identical mazes
-- **Benchmark** — all 15 algorithms timed on the same maze, sorted results table
+- **Benchmark** — all 15 algorithms timed on the same maze, sorted results table, exported to CSV with topology columns
 
 **Post-run analysis**
 - **Autopsy** — step-by-step forward/backward replay of any run (ENTER / b / jump to step N)
+- **Step-by-step Explainer** — each Autopsy step shows *why* that cell was chosen: g/h/f values for A\*, distance for BFS, stack depth for DFS, direction rules for wall followers, and so on. Two levels: **Beginner** (plain language analogies) and **Advanced** (numeric state, complexity notes). Toggle between levels mid-session with `[e]` — no need to restart the replay. Split-screen on wide terminals, stacked on narrow ones.
 - **Heatmap** — 256-colour exploration map with absolute visit-count tiers; the same colour always means the same visit count, so you can compare heatmaps across different algorithms
 - **Report Card** — steps, compute time, path length, terrain cost, efficiency ratio, and a short explanation of the result
+
+**A\* heuristic selector**
+- Six built-in presets selectable from the menu with `[h]`:
+
+  | # | Heuristic | Formula | Admissible? |
+  |---|-----------|---------|:-----------:|
+  | 1 | Manhattan | \|Δr\| + \|Δc\| | ✅ |
+  | 2 | Euclidean | √(Δr² + Δc²) | ✅ |
+  | 3 | Chebyshev | max(\|Δr\|, \|Δc\|) | ❌ on 4-dir grids |
+  | 4 | Weighted ×1.5 | 1.5 × Manhattan | ❌ |
+  | 5 | Weighted ×2.0 | 2.0 × Manhattan | ❌ |
+  | 6 | Zero (Dijkstra) | h = 0 | ✅ |
+
+- **Custom heuristic plugin** — drop a `.py` file into `custom/heuristics/` and it appears in the selector automatically. The active heuristic is shown in the info bar with its admissibility marker. The Priority Queue Inspector reflects whichever heuristic is active.
+
+**Maze generation**
+- Three generators: **DFS** (winding, high dead-end density), **Kruskal's** (uniform spanning tree), **Prim's** (more open, fewer corridors)
+- Press `[g]` in any module to cycle between them; the generator name is shown in the info bar
+- All four modules (Classic, TSP, MAPF, Pursuit-Evasion) support all three generators
 
 **Classroom / learning tools**
 - **Hypothesis Challenge** — before each run, predict the algorithm's behaviour; your predictions are scored afterward and tracked across the session
 - **Tutorial** — data structure and complexity notes for each algorithm, accessible from the main menu
+- **`--learn` flag** — simplified menu with just the 15 algorithms, tutorial, fog, and hypothesis; hides the advanced comparison modes for classroom use
 - Weighted terrain (mud = 3×) makes cost-aware vs cost-blind behaviour visible without any explanation needed
+
+**Extensibility**
+- **Custom algorithm plugin** — drop a `.py` file into `custom/` and it appears in the menu automatically; `_template.py` included
+- **Custom heuristic plugin** — drop a `.py` file into `custom/heuristics/`; wrong signatures are caught at session start, not mid-run
+- **Maze import/export** — saves maze to disk with complexity, generator, and terrain metadata; reload in any later session
+- **ASCII export** — press `[x]` in any module to save the current maze as a `.txt` file with a header showing size, generator, difficulty, and topology stats
 
 ---
 
@@ -157,6 +186,7 @@ One agent chases a target that actively flees. The target moves every tick. The 
   - Windows — **Windows Terminal** or VS Code's integrated terminal. cmd.exe won't work.
 - Minimum terminal size: **80 columns × 30 rows**
 - Race Mode requires **~120+ columns** (two mazes side by side)
+- Step-by-step Explainer split screen requires **maze width + 50 columns**; falls back to stacked layout automatically on narrower terminals
 - No pip installs. No virtual environment. Standard library only.
 
 ---
@@ -178,6 +208,17 @@ python multi_agent_solver.py   # MAPF
 python dynamic_solver3.py      # Pursuit-Evasion
 ```
 
+CLI flags:
+
+```bash
+python _encyclopedia_launcher.py --learn     # simplified menu for classroom use
+python _encyclopedia_launcher.py --classic   # jump straight to Classic Pathfinding
+python _encyclopedia_launcher.py --tsp       # jump straight to TSP
+python _encyclopedia_launcher.py --mapf      # jump straight to MAPF
+python _encyclopedia_launcher.py --pursuit   # jump straight to Pursuit-Evasion
+python _encyclopedia_launcher.py --help      # list all flags
+```
+
 **First run:** pick complexity **3 or 4**, speed **Normal**, no terrain. Start with BFS (option 1) and A\* (option 3) — run both on the same maze and then use **Duel** (option d after each run) to overlay the two paths. That single comparison shows more than an hour of reading.
 
 ---
@@ -190,9 +231,9 @@ algorithm-encyclopedia/
 ├── _encyclopedia_launcher.py     # master menu — start here
 │
 ├── maze_controller.py            # Classic Pathfinding session loop
-├── maze_views.py                 # report card, tutorial, hypothesis UI
+├── maze_views.py                 # report card, tutorial, hypothesis UI, step explainer
 ├── maze_modes.py                 # autopsy, duel, race, benchmark
-├── maze_genV4.py                 # procedural maze generation (hybrid DFS/Prim's)
+├── maze_genV4.py                 # procedural maze generation (DFS / Kruskal's / Prim's)
 │
 ├── treasure_solver2.py           # TSP / Treasure Hunt module
 ├── treasure_gen.py               # maze + treasure placement + BFS distance matrix
@@ -210,9 +251,14 @@ algorithm-encyclopedia/
 │   └── pathfinding/              # one file per algorithm — bfs.py, astar.py, …
 │
 ├── core/
-│   ├── types.py                  # RunResult, MapfResult, PursuitResult, etc.
+│   ├── types.py                  # RunResult, MapfResult, PursuitResult, _StepRecord, etc.
 │   ├── grid.py                   # DIRECTIONS, PASSABLE, terrain_cost()
 │   └── graph.py                  # manhattan_distance(), _deduplicate_path()
+│
+├── custom/
+│   ├── _template.py              # starting point for a custom algorithm plugin
+│   └── heuristics/
+│       └── _template.py          # starting point for a custom A* heuristic plugin
 │
 └── ui/
     ├── theme.py                  # all ANSI colour constants
@@ -236,10 +282,18 @@ The core visualiser is **complete and stable**. Active development continues.
 - Pursuit-Evasion module — all three strategies
 - MVC refactoring — `core/`, `ui/`, `algorithms/` package structure in place
 - Benchmark CSV export, ASCII bar chart, multi-run statistics
-- Kruskal's and Prim's maze generators (option 22 cycles DFS → Kruskal → Prim)
+- Kruskal's and Prim's maze generators — `[g]` cycles DFS → Kruskal → Prim in all four modules
 - Custom algorithm plugin system (`custom/` folder + `_template.py`)
+- Custom heuristic plugin system (`custom/heuristics/` folder) with 6 built-in presets and `[h]` selector
 - Maze import/export with complexity, generator, and terrain metadata
+- ASCII maze export (`[x]` in any module) with header, topology stats, and legend
+- Maze difficulty score (0–100) in HUD, report card, and benchmark CSV
+- Maze topology analyzer — dead ends, junctions, branching factor, longest corridor
+- Step-by-step Autopsy Explainer — beginner and advanced levels, 13 algorithm branches, split-screen layout
 - Algorithm family tree diagram in Tutorial
+- CLI flags (`--learn`, `--classic`, `--tsp`, `--mapf`, `--pursuit`, `--help`)
+- Pursuit-Evasion: dynamic oscillating walls as a toggleable mode
+- Menu-first flow in all four modules — maze generates on first algorithm pick, not at startup
 
 **Planned**
 
@@ -249,43 +303,29 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] Graceful degradation when terminal is too small (currently a soft banner — next step is auto-adjusting)
 - [ ] Windows column-width review for Race Mode on cmd/PowerShell
 - [ ] Hot-reload sandbox — watches `custom/` for file changes and re-runs automatically without restarting
-- [x] CLI mode flags — `--learn` for a simplified menu with just the 15 algorithms; `--help` lists all flags
 
 *Analysis & data*
-- [x] **Benchmark CSV export** — saves complexity / generator / steps / path / cost / time to CSV after each benchmark run
-- [x] **Multi-run statistics** — N runs across fresh mazes, reports mean / min / max / std / success rate per algorithm
-- [x] **ASCII bar chart** — visual step-count comparison directly in the terminal after Benchmark
 - [ ] **Benchmark history viewer** — reads all CSVs from `benchmark_exports/` and shows aggregate trends across sessions
 - [ ] **Session statistics** — end-of-session summary: runs count, most-used algorithm, best efficiency seen
-- [x] **Export maze as ASCII text** — saves the current maze as a `.txt` file for documentation or sharing
 - [ ] **Big-O regression** — runs an algorithm across complexity levels, fits a curve, reports whether it behaves as O(n), O(n log n), or O(n²)
-- [ ] **Operations count** — counts node expansions, edge relaxations, heap operations instead of milliseconds — hardware-agnostic scoring that stays consistent across machines
+- [ ] **Operations count** — counts node expansions, edge relaxations, heap operations instead of milliseconds — hardware-agnostic scoring
 
 *New algorithms*
 - [ ] **Bidirectional A\*** — the cost-aware version of the Bidirectional BFS already in the suite
-- [x] Additional maze generators — Kruskal's and Prim's alongside the existing DFS hybrid; option 22 cycles between them
 - [ ] Jump Point Search — A\* accelerator for uniform grids, skips symmetric nodes
 - [ ] Theta\* (any-angle) — A\* with diagonal movement, produces more natural paths
 - [ ] MAPF: support more than 3 agents
 
 *Extensibility*
-- [x] **Custom algorithm plugin system** — `custom/` folder with `_template.py`; drop a file in and it appears in the menu automatically
-- [x] **Maze import/export** — saves maze to disk with complexity / generator / terrain; reload it later
 - [ ] **Run replay from file** — save a full Autopsy recording as JSON and load it in a later session
-- [x] **Custom heuristic plugin** — write your own heuristic function for A\* and see how it affects path and step count
 - [ ] **Custom maze generator plugin** — same plugin system for generators; appears as an option in the generator cycle
 
 *Visualisation*
-- [x] **Algorithm family tree** — ASCII diagram in Tutorial showing how algorithms relate: BFS → Dijkstra → A\*, DFS → IDA\*, Wall Follower → Pledge, etc.
 - [ ] Side-by-side heatmaps — two heatmaps next to each other, same maze, two different algorithms
-- [x] Maze topology analyzer — shows dead-end count, branching factor, longest corridor after generation
 - [ ] Node expansion visualizer — visit counter on each cell, particularly revealing for IDA\*
-- [x] Pursuit: dynamic wall perturbation as a toggleable mode
 
 *Learning tools*
 - [ ] Algorithm tournament — automated round-robin across all algorithms on the same maze, leaderboard per metric
-- [x] Maze difficulty score — a 0–100 score based on dead ends, tortuosity, and branching; shown at generation
-- [ ] Step-by-step explainer mode — each Autopsy step accompanied by a one-line explanation of why that cell was chosen
 - [ ] Pathfinding quiz mode — see a maze, predict which algorithm explores the most cells; scored with explanation
 - [ ] Code assembly quiz — algorithm lines shown shuffled; put them in the right order using numbers
 - [ ] Bug hunt mode — a broken implementation with a classic bug; run it, see the wrong path, find the line
@@ -293,7 +333,7 @@ The core visualiser is **complete and stable**. Active development continues.
 *Research tools*
 - [ ] Reproducible seed mode — saves the random seed of each maze so the same maze can be reproduced exactly
 - [ ] Algorithm parameter tuning — interactive prompt for Genetic Algorithm parameters before each run
-- [ ] Admissibility tester — runs A\* with different heuristics and checks whether each produces an optimal path
+- [ ] Admissibility tester — runs A\* with all six built-in heuristics and reports whether each produces an optimal path
 - [ ] Dead-end density control — control dead-end count independently from complexity level
 - [ ] Complexity scaling report — one algorithm across all 11 levels; shows how runtime grows, verifying Big-O in practice
 - [ ] Weighted terrain editor — define which cells are mud manually before running, for controlled experiments
