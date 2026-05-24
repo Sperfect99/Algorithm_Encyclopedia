@@ -24,6 +24,7 @@ from ui.theme import *  # noqa: F401,F403
 from ui.terminal_utils import (
     _strip_ansi, _center_ansi, _term_height, _term_width,
     clear_screen as _clear_screen,
+    restore_terminal as _restore_terminal,
 )
 
 ansi_enable_windows()
@@ -232,12 +233,14 @@ def _launch_module(module_name: str, display_title: str, **kwargs) -> None:
     try:
         entry(**kwargs)
     except (KeyboardInterrupt, EOFError):
+        _restore_terminal()
         print(f"\n\n  {C_DOT}↩  Returned from {display_title}.{C_END}")
         time.sleep(0.5)
     except (MemoryError, SystemExit):
         raise
     except Exception as exc:
         import traceback
+        _restore_terminal()   # cursor and colours must be clean before printing
         _CHILD_CRASHED.add(display_title)
         print(
             f"\n  {C_HEAD}💥  {display_title} crashed unexpectedly:{C_END}\n"
@@ -246,7 +249,8 @@ def _launch_module(module_name: str, display_title: str, **kwargs) -> None:
         traceback.print_exc()
         input(f"  👉 Press {C_PATH}ENTER{C_END} to return to the menu…")
     finally:
-        # wipe any "Goodbye!" text left by the child before redrawing the menu
+        # clear any text the child left before the master menu redraws
+        _restore_terminal()
         sys.stdout.write("\033[2J\033[H")
         sys.stdout.flush()
 

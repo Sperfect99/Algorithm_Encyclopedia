@@ -33,7 +33,7 @@ from ui.theme          import (
     C_CONFLICT, AGENT_COLORS, GOAL_COLORS,C_DIM,C_STAT,
     ansi_enable_windows,
 )
-from ui.terminal_utils import clear_screen, _center_ansi, _check_terminal_size, _term_width, flush_stdin
+from ui.terminal_utils import clear_screen, _center_ansi, _check_terminal_size, _term_width, flush_stdin, restore_terminal
 from ui.renderer       import render_mapf
 from ui.animation      import run_mapf_animation
 
@@ -403,7 +403,10 @@ def main() -> None:
     try:
         _main_loop()
     except (KeyboardInterrupt, EOFError):
-        print("\033[0m\n\nInterrupted — goodbye! 🤖\n")
+        restore_terminal()
+    except Exception:
+        restore_terminal()
+        raise
 
 
 def _main_loop() -> None:
@@ -511,7 +514,8 @@ def _main_loop() -> None:
             continue
 
         elif choice.lower() == "g":
-            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(generator_type) + 1) % len(_GEN_CYCLE)]
+            _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
+            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
             print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
             time.sleep(0.7)
             continue
@@ -642,8 +646,11 @@ if __name__ == "__main__":
     try:
         main()
     except BrokenPipeError:
-        # Downstream pipe consumer closed early (e.g. `python ... | head`).
-        # Flush stderr and exit silently — no traceback, exit code 0.
-        import sys
-        sys.stderr.close()
+        import sys as _sys
+        _sys.stderr.close()
+    except Exception as _exc:
+        restore_terminal()
+        print(f"\n  \u2716  Crashed: {type(_exc).__name__}: {_exc}")
+        print("  Run through _encyclopedia_launcher.py for a fuller error report.")
+        raise
         sys.exit(0)

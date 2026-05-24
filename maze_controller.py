@@ -32,6 +32,7 @@ from ui.theme          import *                           # noqa: F401,F403
 from ui.terminal_utils import (
     clear_screen, _strip_ansi, _visual_width, _center_ansi,
     _check_terminal_size, _term_width, _term_height, flush_stdin,
+    restore_terminal,
 )
 ansi_enable_windows()
 
@@ -572,7 +573,10 @@ def main(mode: str = "full") -> None:
     try:
         _main_loop(mode=mode)
     except (KeyboardInterrupt, EOFError):
-        print("\033[0m\n\nInterrupted — goodbye! 🚀\n")
+        restore_terminal()
+    except Exception:
+        restore_terminal()
+        raise
 
 
 def _main_loop(mode: str = "full") -> None:
@@ -1112,3 +1116,8 @@ if __name__ == "__main__":
         import sys
         sys.stderr.close()
         sys.exit(0)
+    except Exception as _exc:
+        restore_terminal()
+        print(f"\n  \u2716  Crashed: {type(_exc).__name__}: {_exc}")
+        print("  Run through _encyclopedia_launcher.py for a fuller error report.")
+        raise
