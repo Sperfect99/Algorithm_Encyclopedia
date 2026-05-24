@@ -332,11 +332,19 @@ def run_autopsy(
     initial_maze: list[list[int | str]],
     recording:    list[_StepRecord],
     algo_name:    str,
+    explain:      bool = False,
+    level:        str  = "beginner",
 ) -> None:
-    """Step-by-step replay of a recorded algorithm run.
+    """Frame-by-frame replay of a recorded algorithm run.
 
-    ENTER = advance one step, b = go back, <number> = jump to that step, q = quit.
+    When explain=True the step-by-step explainer panel is shown alongside
+    the maze. Split screen on wide terminals, stacked on narrow ones.
+    Toggle explanation level mid-session with [e].
+
+    Navigation: ENTER=next  b=back  <N>=jump  e=toggle level  q=quit
     """
+    from maze_views import show_step_explanation, _PANEL_W
+
     if not recording:
         print(f"\n  (No steps recorded for {algo_name}.)")
         input(f"  Press {C_PATH}ENTER{C_END} to continue…")
@@ -345,9 +353,11 @@ def run_autopsy(
     total = len(recording)
     maze  = [row[:] for row in initial_maze]
     pos   = 0
+    rows  = len(initial_maze)
+    cols  = len(initial_maze[0])
 
     def _rebuild_to(target: int) -> None:
-        """Replay from the beginning to *target* step. Needed for jump navigation."""
+        """Jump navigation — replay from scratch to *target*."""
         nonlocal pos
         for ri, row in enumerate(initial_maze):
             for ci, val in enumerate(row):
@@ -358,39 +368,84 @@ def run_autopsy(
             maze[rec.r][rec.c] = rec.new_cell
         pos = target
 
+    def _use_split() -> bool:
+        from ui.terminal_utils import _term_width
+        return explain and _term_width() >= cols + 4 + _PANEL_W
+
+    def _render_frame(current_pos: int) -> None:
+        from ui.renderer       import CELL_RENDER
+        from ui.terminal_utils import _term_width
+
+        extra     = recording[current_pos - 1].extra if current_pos > 0 else None
+        panel     = show_step_explanation(algo_name, extra, current_pos, total, level, rows, cols)
+        hud_text  = (recording[current_pos - 1].hud if current_pos > 0
+                     else f"{algo_name} — start of run")
+        lbl       = "BEGINNER" if level == "beginner" else "ADVANCED"
+        nav       = (f"⏮  step {current_pos}/{total}"
+                     f"  [ENTER=next  b=back  <N>=jump  e=level  q=quit]")
+
+        maze_lines = ["".join(CELL_RENDER.get(cell, str(cell)) for cell in row)
+                      for row in maze]
+
+        if _use_split():
+            clear_screen()
+            pad  = " " * cols
+            sep  = "─" * cols + "─┼─" + "─" * _PANEL_W
+            print(f"  {C_HEAD}⏮ AUTOPSY — {algo_name}  [{lbl}]{C_END}")
+            print(f"  {C_DIM}{hud_text}{C_END}")
+            print(sep)
+            for i, ml in enumerate(maze_lines):
+                pl = panel[i] if i < len(panel) else " " * _PANEL_W
+                print(f"{ml} │ {pl}")
+            for pl in panel[len(maze_lines):]:
+                print(f"{pad} │ {pl}")
+            print(sep)
+            print(f"  {C_DIM}{nav}{C_END}")
+        else:
+            header = (f"  {C_HEAD}⏮ AUTOPSY — {algo_name}  [{lbl}]{C_END}\n"
+                      f"  {C_DIM}{hud_text}{C_END}\n"
+                      f"  {C_DIM}{nav}{C_END}")
+            render(maze, header)
+            if explain:
+                print()
+                for pl in panel:
+                    print(f"  {pl}")
+
     clear_screen()
-    print(f"\n{C_HEAD}⏮  ALGORITHM AUTOPSY — {algo_name}{C_END}\n  {total} steps recorded.\n  ENTER=next  b=back  <number>=jump  q=quit\n")
-    time.sleep(0.8)
+    print(f"\n{C_HEAD}⏮  ALGORITHM AUTOPSY — {algo_name}{C_END}")
+    print(f"  {total} steps recorded.\n")
+    if explain:
+        print(f"  {C_DIM}Level: {level.upper()}   Press [e] to toggle during replay.{C_END}")
+    print(f"  {C_DIM}ENTER=next  b=back  <N>=jump  e=toggle level  q=quit{C_END}")
+    time.sleep(0.7)
 
     while True:
-        # Flash the frontier marker at current position
         if pos > 0:
-            rec    = recording[pos - 1]
-            r_head = rec.r
-            c_head = rec.c
-            saved  = maze[r_head][c_head] if maze[r_head][c_head] not in {'S', 'E'} else None
+            rec     = recording[pos - 1]
+            rh, ch  = rec.r, rec.c
+            saved   = maze[rh][ch] if maze[rh][ch] not in {"S", "E"} else None
             if saved is not None:
-                maze[r_head][c_head] = '@'
+                maze[rh][ch] = "@"
         else:
-            r_head = c_head = -1
-            saved  = None
+            rh = ch = -1
+            saved   = None
 
-        hud_text = recording[pos - 1].hud if pos > 0 else f"{algo_name} — start of run (no steps applied yet)"
-        nav_line = f"⏮  Autopsy: step {pos}/{total}  [ENTER=next  b=back  <N>=jump  q=quit]"
-        render(maze, f"{hud_text}\n{nav_line}")
+        _render_frame(pos)
 
         if saved is not None:
-            maze[r_head][c_head] = saved
+            maze[rh][ch] = saved
 
         raw = input("  → ").strip().lower()
-        if raw == 'q':
+        if raw == "q":
             break
-        elif raw == 'b':
+        elif raw == "e":
+            level = "advanced" if level == "beginner" else "beginner"
+        elif raw == "b":
             if pos > 0:
                 rec = recording[pos - 1]
                 maze[rec.r][rec.c] = rec.prev_cell
                 pos -= 1
-        elif raw == '':
+        elif raw == "":
             if pos < total:
                 rec = recording[pos]
                 maze[rec.r][rec.c] = rec.new_cell
@@ -401,7 +456,6 @@ def run_autopsy(
                 _rebuild_to(target)
             except ValueError:
                 pass
-
 
 
 # --- ALGORITHM DUEL ---

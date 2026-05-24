@@ -1,10 +1,12 @@
 """
-algorithms/pathfinding/dijkstra.py — Dijkstra's Algorithm (Uniform Cost Search).
+algorithms/pathfinding/dijkstra.py
+-----------------------------------
+Dijkstra's Algorithm — Uniform Cost Search (A* with h = 0).
 
-Basically A* with h = 0. Expands radially outward from start, always picking
-the cheapest node. Cost-aware — routes around mud. Slower than A* because it
-explores in all directions equally rather than focusing toward the goal.
+Generator contract: yields "step" dicts with ``pq_info`` for the V6 PQ
+Inspector; yields "done" on completion.
 """
+
 from __future__ import annotations
 
 import heapq
@@ -22,14 +24,25 @@ def solve(
     fog:         set[tuple[int, int]] | None = None,
     visit_count: dict[tuple[int, int], int]  | None = None,
 ) -> Generator[dict, None, None]:
-    """Dijkstra."""
+    """
+    Dijkstra's Algorithm on *maze* (f = accumulated terrain cost only).
+
+    Explores radially from start; always expands the cheapest-known node.
+    Cost-aware: routes around mud (cost 3).  Equivalent to A* with h = 0.
+
+    The ``pq_info`` field carries a top-3 heap snapshot for the V6 PQ Inspector.
+
+    Yields:
+        ``{"type": "step", ..., "pq_info": str}`` for every node expanded.
+        ``{"type": "done", ...}`` once solved or heap exhausted.
+    """
     rows, cols = len(maze), len(maze[0])
     start, end = (0, 0), (rows - 1, cols - 1)
 
-    pq:         list[tuple[float, tuple[int, int]]]              = [(0.0, start)]
-    parent:     dict[tuple[int, int], tuple[int, int] | None]    = {start: None}
-    g_score:    dict[tuple[int, int], float]                     = {start: 0.0}
-    closed_set: set[tuple[int, int]]                             = set()
+    pq: list[tuple[float, tuple[int, int]]]              = [(0.0, start)]
+    parent:     dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+    g_score:    dict[tuple[int, int], float]                  = {start: 0.0}
+    closed_set: set[tuple[int, int]]                          = set()
 
     steps        = 0
     compute_time = 0.0
@@ -48,14 +61,15 @@ def solve(
             t1 = time.perf_counter()
             path_len, path_cost = reconstruct_path_cells(parent, curr, maze, fog)
             pure_time = compute_time + (time.perf_counter() - t1)
+            msg = (
+                f"✅ SOLVED! | Steps: {int(steps)} | "
+                f"Time: {pure_time * 1000:.2f} ms | "
+                f"Path: {path_len} | Cost: {path_cost}"
+            )
             yield {
                 "type":    "done",
                 "result":  RunResult(steps, pure_time, path_len, path_cost),
-                "message": (
-                    f"✅ SOLVED! | Steps: {int(steps)} | "
-                    f"Time: {pure_time * 1000:.2f} ms | "
-                    f"Path: {path_len} | Cost: {path_cost}"
-                ),
+                "message": msg,
             }
             return
 
@@ -76,11 +90,12 @@ def solve(
         if visit_count is not None:
             visit_count[(r, c)] = visit_count.get((r, c), 0) + 1
 
-        # PQ Inspector snapshot — top-3 heap entries by cost
+        # V6 PQ Inspector — top-3 entries shown as "(row,col) g=G"
         pq_info = ""
         if pq:
-            top     = heapq.nsmallest(min(3, len(pq)), pq)
-            pq_info = "  │  ".join(f"({pr},{pc}) g={gv:.0f}" for gv, (pr, pc) in top)
+            top   = heapq.nsmallest(min(3, len(pq)), pq)
+            parts = [f"({pr},{pc}) g={gv:.0f}" for gv, (pr, pc) in top]
+            pq_info = "  │  ".join(parts)
 
         yield {
             "type":    "step",
@@ -89,6 +104,8 @@ def solve(
             "title":   "Dijkstra (Uniform Cost)",
             "restore": ".",
             "pq_info": pq_info,
+            "extra": {"algo": "dijkstra", "g": g_score.get(curr, 0),
+                      "open_size": len(pq), "closed_size": len(closed_set)},
         }
 
     yield {

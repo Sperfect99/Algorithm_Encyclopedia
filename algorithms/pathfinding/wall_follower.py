@@ -1,10 +1,12 @@
 """
-algorithms/pathfinding/wall_follower.py — Wall Follower (Right-Hand Rule).
+algorithms/pathfinding/wall_follower.py
+-----------------------------------------
+Wall Follower — Right-Hand Rule.  O(1) space, memoryless.
 
-Keep your right hand on the wall. That's the whole algorithm.
-O(1) space — it only knows current position and heading. No cost model.
-Fails spectacularly on mazes with disconnected wall islands (complexity >= 5).
+Generator contract: yields "step" dicts as the agent walks;
+yields "done" on solution or failure.
 """
+
 from __future__ import annotations
 
 import time
@@ -21,13 +23,26 @@ def solve(
     fog:         set[tuple[int, int]] | None = None,
     visit_count: dict[tuple[int, int], int]  | None = None,
 ) -> Generator[dict, None, None]:
-    """Wall Follower (right-hand rule)."""
+    """
+    Wall Follower (Right-Hand Rule) on *maze*.
+
+    Keeps the RIGHT wall on the agent's right at every step.
+    O(1) space: only current position and heading are stored.
+    Fails on mazes with disconnected interior wall islands (braided mazes).
+
+    V7 fix (Q-3): detects total enclosure (all 4 neighbours are walls)
+    immediately — avoids spinning for ``max_allowed_steps`` iterations.
+
+    Yields:
+        ``{"type": "step", ...}`` for every movement step.
+        ``{"type": "done", ...}`` on reaching the exit or failure.
+    """
     rows, cols = len(maze), len(maze[0])
     start, end = (0, 0), (rows - 1, cols - 1)
 
-    # Cardinal directions: N=0, E=1, S=2, W=3
+    # Cardinal directions indexed 0–3: N E S W
     dirs: tuple[tuple[int, int], ...] = ((-1, 0), (0, 1), (1, 0), (0, -1))
-    curr_dir          = 2   # start facing South
+    curr_dir          = 2                     # start facing South
     r, c              = start
     steps             = 0
     compute_time      = 0.0
@@ -40,16 +55,17 @@ def solve(
         if (r, c) == end:
             path_len, path_cost = wall_follower_path_cells(history, maze, fog)
             compute_time += time.perf_counter() - t0
+            msg = (
+                f"✅ SOLVED! | Steps: {steps} | "
+                f"Time: {compute_time * 1000:.2f} ms | "
+                f"Path: {path_len} | Cost: {path_cost}\n"
+                f"  📐 Steps = total moves incl. loops; "
+                f"Path = loop-free distance ({path_len} ≪ {steps} on winding mazes)"
+            )
             yield {
                 "type":    "done",
                 "result":  RunResult(steps, compute_time, path_len, path_cost),
-                "message": (
-                    f"✅ SOLVED! | Steps: {steps} | "
-                    f"Time: {compute_time * 1000:.2f} ms | "
-                    f"Path: {path_len} | Cost: {path_cost}\n"
-                    f"  📐 Steps = total moves incl. loops; "
-                    f"Path = loop-free distance ({path_len} ≪ {steps} on winding mazes)"
-                ),
+                "message": msg,
             }
             return
 
@@ -62,10 +78,8 @@ def solve(
             }
             return
 
-        # Right-hand priority: try right → straight → left → back.
-        # The `moved` flag catches complete enclosure — all 4 neighbours are walls.
-        # Without it the agent spins on the same cell until it hits max_allowed_steps,
-        # which on a large slow maze could take hours.
+        # Right-hand priority: try right → straight → left → back
+        # V7 fix (Q-3): detect enclosure with the `moved` flag.
         moved = False
         for turn in (1, 0, -1, 2):
             test_dir = (curr_dir + turn) % 4
@@ -96,8 +110,12 @@ def solve(
             visit_count[(r, c)] = visit_count.get((r, c), 0) + 1
 
         yield {"type": "step", "r": r, "c": c, "steps": steps,
-               "title": "Wall Follower (Right-Hand)", "restore": ".", "pq_info": ""}
+               "title": "Wall Follower (Right-Hand)", "restore": ".", "pq_info": "",
+               "extra": {"algo": "wall_follower", "direction": ("N","E","S","W")[curr_dir], "rule": "right-hand"}}
 
-    # unreachable — keeps type checkers happy
-    yield {"type": "done", "result": RunResult(float('inf'), compute_time, 0, 0),
-           "message": "❌ Wall Follower: unexpected exit."}
+    # unreachable — satisfies type checkers
+    yield {
+        "type":    "done",
+        "result":  RunResult(float('inf'), compute_time, 0, 0),
+        "message": "❌ Wall Follower: unexpected exit.",
+    }

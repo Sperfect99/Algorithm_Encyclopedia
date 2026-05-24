@@ -1026,7 +1026,24 @@ def _main_loop(mode: str = "full") -> None:
                         input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
 
                     elif post_choice in {'a', 'autopsy'} and has_autopsy:
-                        run_autopsy(my_maze, recording, _ALGO_NAMES[choice])
+                        # Ask whether to enable the step-by-step explainer.
+                        # Only offered for algorithms that have real decision
+                        # logic — random algorithms skip straight to autopsy.
+                        _algo_key = _ALGO_NAMES[choice]
+                        _no_logic = {'Random Mouse', 'Randomized DFS'}
+                        if _algo_key not in _no_logic:
+                            flush_stdin()
+                            _exp_raw = input(
+                                f"\n  Enable step-by-step explanations?"
+                                f"  ({C_PATH}b{C_END}=beginner  {C_BIGO}a{C_END}=advanced  {C_DIM}ENTER=off{C_END}): "
+                            ).strip().lower()
+                            _explain = _exp_raw in {'b', 'a', 'beginner', 'advanced', 'y', 'yes'}
+                            _level   = "advanced" if _exp_raw in {'a', 'advanced'} else "beginner"
+                        else:
+                            _explain = False
+                            _level   = "beginner"
+                        run_autopsy(my_maze, recording, _algo_key,
+                                    explain=_explain, level=_level)
 
                     elif post_choice in {'d', 'duel'} and has_duel:
                         run_duel(my_maze, m_copy, result, _ALGO_NAMES[choice], terrain_active, dispatch_fn=_dispatch_algorithm)

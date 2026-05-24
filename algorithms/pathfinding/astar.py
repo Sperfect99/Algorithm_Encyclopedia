@@ -156,14 +156,18 @@ def solve(
             except Exception:
                 pq_info = ""   # plugin misbehaved — silent fallback
 
-        yield {
-            "type":    "step",
-            "r": r, "c": c,
-            "steps":   steps,
-            "title":   "A* (Cost-Aware)",
-            "restore": ".",
-            "pq_info": pq_info,
-        }
+            _h_val = h(r, c, er, ec, maze)
+            yield {
+                "type":    "step",
+                "r": r, "c": c,
+                "steps":   steps,
+                "title":   "A* (Cost-Aware)",
+                "restore": ".",
+                "pq_info": pq_info,
+                "extra": {"algo": "astar", "g": g_score.get(curr, 0),
+                          "h": _h_val, "f": g_score.get(curr, 0) + _h_val,
+                          "open_size": len(pq), "closed_size": len(closed_set)},
+            }
 
     yield {
         "type":    "done",

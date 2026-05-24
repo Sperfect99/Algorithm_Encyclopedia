@@ -123,6 +123,7 @@ def run_algorithm(
                         active_recording.append(_StepRecord(
                             r, c, original, actual_restore,
                             f"Running: {title} | Steps: {steps}",
+                            state.get("extra"),
                         ))
                     maze[r][c] = actual_restore
 
@@ -144,6 +145,7 @@ def run_algorithm(
                         prev_cell=state["prev"],
                         new_cell=state["new"],
                         hud=state["hud"],
+                        extra=state.get("extra"),
                     ))
 
             elif stype == "done":

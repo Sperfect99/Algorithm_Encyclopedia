@@ -1,12 +1,12 @@
 """
-algorithms/pathfinding/pledge.py — Pledge Algorithm.
+algorithms/pathfinding/pledge.py
+----------------------------------
+Pledge Algorithm — escapes wall islands.  O(1) space.
 
-Wall Follower with one extra integer: a cumulative turn counter.
-When the counter hits zero again (agent has made a net-zero turn sequence),
-it detaches from the current wall and walks freely again. This is what
-lets it escape island loops that trap plain Wall Follower.
-Still O(1) space — the counter is all that's added.
+Generator contract: yields "step" dicts as the agent walks;
+yields "done" on solution or failure.
 """
+
 from __future__ import annotations
 
 import time
@@ -23,12 +23,27 @@ def solve(
     fog:         set[tuple[int, int]] | None = None,
     visit_count: dict[tuple[int, int], int]  | None = None,
 ) -> Generator[dict, None, None]:
-    """Pledge Algorithm."""
+    """
+    Pledge Algorithm on *maze*.
+
+    Adds ONE cumulative turn integer to Wall Follower.  When the counter
+    returns to zero and the agent faces the main direction again, wall-
+    following is suspended — detaching from island loops that trap plain
+    Wall Follower.  Still O(1) space.
+
+    V7 fix (A-3): yields a ``"done"`` failure frame on timeout instead of
+    returning silently, so the last animation frame always shows a message.
+
+    Yields:
+        ``{"type": "step", ..., "title": "Pledge | Compass: N"}`` per step.
+        ``{"type": "done", ...}`` on reaching the exit or failure.
+    """
     rows, cols = len(maze), len(maze[0])
     start, end = (0, 0), (rows - 1, cols - 1)
 
+    # Cardinal directions indexed 0–3: N E S W
     dirs: tuple[tuple[int, int], ...] = ((-1, 0), (0, 1), (1, 0), (0, -1))
-    main_dir          = 2   # preferred direction: South
+    main_dir          = 2             # preferred direction: South
     curr_dir          = main_dir
     r, c              = start
     steps             = 0
@@ -44,19 +59,21 @@ def solve(
         if (r, c) == end:
             path_len, path_cost = wall_follower_path_cells(history, maze, fog)
             compute_time += time.perf_counter() - t0
+            msg = (
+                f"✅ SOLVED! | Steps: {steps} | "
+                f"Time: {compute_time * 1000:.2f} ms | "
+                f"Path: {path_len} | Cost: {path_cost}"
+            )
             yield {
                 "type":    "done",
                 "result":  RunResult(steps, compute_time, path_len, path_cost),
-                "message": (
-                    f"✅ SOLVED! | Steps: {steps} | "
-                    f"Time: {compute_time * 1000:.2f} ms | "
-                    f"Path: {path_len} | Cost: {path_cost}"
-                ),
+                "message": msg,
             }
             return
 
         if steps > max_allowed_steps:
             compute_time += time.perf_counter() - t0
+            # V7 fix (A-3): emit a visible failure message
             yield {
                 "type":    "done",
                 "result":  RunResult(float('inf'), compute_time, 0, 0),
@@ -66,7 +83,7 @@ def solve(
 
         moved = False
 
-        # ── Free-walk phase: move in main_dir until we hit a wall ──────────
+        # ── Free-walk phase: move in main_dir until a wall ──────────────
         if not wall_following:
             dr, dc = dirs[main_dir]
             nr, nc = r + dr, c + dc
@@ -79,9 +96,9 @@ def solve(
                 turn_total     = 0
                 curr_dir       = main_dir
 
-        # ── Wall-following phase: right-hand rule + cumulative turn counter ─
+        # ── Wall-following phase: right-hand rule with turn counter ─────
         if wall_following and not moved:
-            last_turn = 0
+            last_turn = 0   # records the turn offset used for this step
             for turn in (1, 0, -1, 2):
                 test_dir = (curr_dir + turn) % 4
                 dr, dc   = dirs[test_dir]
@@ -100,6 +117,9 @@ def solve(
                     moved     = True
                     break
 
+            # C-5 fix: enclosure guard — all four neighbors are walls.
+            # Without this, `moved` stays False and the agent yields from
+            # the same cell until the step limit, wasting the entire budget.
             if not moved:
                 compute_time += time.perf_counter() - t0
                 yield {
@@ -109,10 +129,27 @@ def solve(
                 }
                 return
 
-            # Detach from wall when turn_total hits zero AND we're facing main_dir.
-            # The `last_turn != 0` guard is important: we only detach on an actual
-            # turning step, not a straight step. Without it, the agent can detach
-            # mid-concavity and oscillate back into the same wall immediately.
+            # Detach from wall when the cumulative turn counter returns to
+            # zero AND the agent is facing main_dir again.
+            #
+            # Canonical Pledge invariant: detachment must be triggered by an
+            # actual TURNING step (last_turn != 0), not a straight step
+            # (last_turn == 0).
+            #
+            # Why this matters on concave obstacles:
+            #   A straight step (turn == 0) never changes turn_total.  If
+            #   turn_total is already 0 and curr_dir == main_dir before a
+            #   straight step, those facts remain true after it — but the
+            #   agent has not completed any net-zero turn sequence; it simply
+            #   walked forward.  Detaching here while still inside a concave
+            #   recess causes the agent to immediately re-hit the inner wall,
+            #   re-enter wall-following at turn_total=0, and oscillate until
+            #   the step budget is exhausted.
+            #
+            #   With `last_turn != 0`, detachment only fires when the step
+            #   that zeroed the counter was itself a left-turn — i.e., the
+            #   agent has genuinely completed a topological loop around an
+            #   obstacle feature and is now clear to continue straight.
             if last_turn != 0 and turn_total == 0 and curr_dir == main_dir:
                 wall_following = False
 
@@ -131,7 +168,14 @@ def solve(
             "title":   f"Pledge | Compass: {turn_total}",
             "restore": ".",
             "pq_info": "",
+            "extra": {"algo": "pledge",
+                      "direction": ("N","E","S","W")[curr_dir % 4],
+                      "turn_count": turn_total},
         }
 
-    yield {"type": "done", "result": RunResult(float('inf'), compute_time, 0, 0),
-           "message": "❌ Pledge: unexpected exit."}
+    # unreachable — satisfies type checkers
+    yield {
+        "type":    "done",
+        "result":  RunResult(float('inf'), compute_time, 0, 0),
+        "message": "❌ Pledge: unexpected exit.",
+    }

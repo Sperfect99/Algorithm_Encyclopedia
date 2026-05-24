@@ -1,23 +1,31 @@
 """
-algorithms/pathfinding/dead_end_filling.py — Dead-End Filling.
+algorithms/pathfinding/dead_end_filling.py
+--------------------------------------------
+Dead-End Filling — topological, not navigational.
 
-Not really a search algorithm — it's a topological operation.
-Seals any cell with 3+ wall neighbours, then propagates outward.
-What's left after all dead ends are sealed IS the solution path.
+Generator contract: yields "record_only" dicts as cells are walled up
+(autopsy capture without rendering), and "render" dicts at frame
+intervals.  Yields "done" once the solution path is revealed.
 
-Doesn't navigate at all. Doesn't know about terrain cost in any useful way.
-Works beautifully on perfect mazes; produces loop remnants on braided ones.
+This algorithm is unique: it modifies the maze in-place by sealing dead
+ends (setting them to ``1``) rather than moving through it.
 """
+
 from __future__ import annotations
 
 import time
 from collections import deque
-from typing import Generator
+from typing      import Generator
 
 from core.grid  import DIRECTIONS, terrain_cost
 from core.types import RunResult
 
-
+# ---------------------------------------------------------------------------
+# Module-level BFS used exclusively for the post-fill connectivity check.
+# Kept inline (not imported from core.graph) because this is the only
+# call site and adding a public function to graph.py for one algorithm
+# would widen that module's interface unnecessarily.
+# ---------------------------------------------------------------------------
 def _bfs_connected(
     maze:  list[list[int | str]],
     start: tuple[int, int],
@@ -25,11 +33,12 @@ def _bfs_connected(
     rows:  int,
     cols:  int,
 ) -> bool:
-    """Check if start can reach end through the surviving (non-wall) cells.
+    """Return True if *start* can reach *end* through surviving passable cells.
 
-    Called once after the fill phase. Dead-End Filling doesn't guarantee
-    connectivity — disconnected components each lose their dead ends
-    independently, so we have to verify start actually reaches end.
+    'Surviving' means any cell whose value is NOT ``1`` — i.e. the cells
+    that dead-end filling left standing, including ``'S'``, ``'E'``, ``0``,
+    and ``'~'``.  Called once after the fill phase to verify global
+    connectivity before claiming a solution.
     """
     visited: set[tuple[int, int]] = {start}
     queue:   deque[tuple[int, int]] = deque([start])
@@ -54,11 +63,29 @@ def solve(
     fog:         set[tuple[int, int]] | None = None,
     visit_count: dict[tuple[int, int], int]  | None = None,
 ) -> Generator[dict, None, None]:
-    """Dead-End Filling."""
+    """
+    Dead-End Filling on *maze*.
+
+    Iteratively seals cells that have ≥ 3 wall neighbours.  Continues
+    until only the solution path (and special cells) remain.  Topological:
+    never navigates — eliminates all dead ends.
+
+    The ``"record_only"`` yields allow the animator's autopsy recorder
+    to capture every individual cell-to-wall mutation without triggering
+    a visual render on every step (which would be extremely slow).
+
+    Yields:
+        ``{"type": "record_only", ...}`` for every cell sealed (wall collapse).
+        ``{"type": "render", ...}``      every ``_FRAME_INTERVAL`` collapses.
+        ``{"type": "record_only", ...}`` for every path cell revealed.
+        ``{"type": "done", ...}``        once the solution is fully marked.
+    """
     rows, cols   = len(maze), len(maze[0])
     steps        = 0
     compute_time = 0.0
+    sealed       = 0
 
+    # ── Local wall-check helpers ──────────────────────────────────────────
     def _is_wall(r: int, c: int) -> bool:
         if not (0 <= r < rows and 0 <= c < cols):
             return True
@@ -67,7 +94,7 @@ def solve(
     def _count_walls(r: int, c: int) -> int:
         return sum(1 for dr, dc in DIRECTIONS if _is_wall(r + dr, c + dc))
 
-    # Seed the queue with every cell that already has 3+ wall neighbours
+    # ── Seed the dead-end queue ───────────────────────────────────────────
     dead_ends: deque[tuple[int, int]] = deque(
         (r, c)
         for r in range(rows)
@@ -76,7 +103,7 @@ def solve(
     )
     queued: set[tuple[int, int]] = set(dead_ends)
 
-    # ── Fill phase ────────────────────────────────────────────────────────
+    # ── Fill dead ends ────────────────────────────────────────────────────
     while dead_ends:
         t0   = time.perf_counter()
         r, c = dead_ends.popleft()
@@ -97,16 +124,19 @@ def solve(
             compute_time += time.perf_counter() - t0
             steps        += 1
 
-            # Record without rendering — rendering every single cell collapse
-            # would be too slow, so we batch renders below
+            # Record the wall-collapse for autopsy (no render)
+            sealed += 1
             yield {
                 "type": "record_only",
-                "r": r, "c": c,
+                "r":    r,
+                "c":    c,
+                "extra": {"algo": "dead_end", "sealed": sealed},
                 "prev": prev_cell,
                 "new":  1,
                 "hud":  f"Running: Dead-End Filling | Walls Collapsed: {steps}",
             }
 
+            # Periodically emit a render frame
             if steps % 3 == 0:
                 yield {
                     "type":    "render",
@@ -114,7 +144,7 @@ def solve(
                     "message": f"Running: Dead-End Filling | Walls Collapsed: {steps}",
                 }
 
-            # Check if any neighbours are now newly-dead-ended
+            # Propagate: any newly-created dead ends?
             t0 = time.perf_counter()
             for dr, dc in DIRECTIONS:
                 nr, nc = r + dr, c + dc
@@ -130,9 +160,17 @@ def solve(
         else:
             compute_time += time.perf_counter() - t0
 
-    # ── Connectivity check ─────────────────────────────────────────────────
+    # ── Connectivity check ────────────────────────────────────────────────
+    # Dead-End Filling guarantees that every DEAD END is removed, but it
+    # does NOT guarantee that the surviving corridor connects start to end.
+    # On a maze with two disconnected components, both components lose their
+    # dead ends independently and the remaining corridors declare "solved"
+    # with no actual path from S to E.  We must verify connectivity first.
     t0 = time.perf_counter()
-    if not _bfs_connected(maze, (0, 0), (rows - 1, cols - 1), rows, cols):
+    start_cell = (0, 0)
+    end_cell   = (rows - 1, cols - 1)
+
+    if not _bfs_connected(maze, start_cell, end_cell, rows, cols):
         compute_time += time.perf_counter() - t0
         yield {
             "type":    "done",
@@ -145,7 +183,7 @@ def solve(
         }
         return
 
-    # ── Reveal surviving solution path ─────────────────────────────────────
+    # ── Reveal the surviving solution path ───────────────────────────────
     path_len  = 0
     path_cost = 0
 
@@ -160,9 +198,11 @@ def solve(
                 if fog is not None:
                     fog.add((r, c))
 
+                # Record the path-reveal for autopsy
                 yield {
                     "type": "record_only",
-                    "r": r, "c": c,
+                    "r":    r,
+                    "c":    c,
                     "prev": prev_cell,
                     "new":  'P',
                     "hud":  "Dead-End Filling — solution path revealed",
@@ -173,12 +213,13 @@ def solve(
         " (includes loop remnants — braided maze)"
         if path_len > (rows + cols) else ""
     )
+    msg = (
+        f"✅ SOLVED! | Walls Collapsed: {steps} | "
+        f"Time: {compute_time * 1000:.2f} ms | "
+        f"Surviving cells: {path_len}{path_note} | Cost: {path_cost}"
+    )
     yield {
         "type":    "done",
         "result":  RunResult(steps, compute_time, path_len, path_cost),
-        "message": (
-            f"✅ SOLVED! | Walls Collapsed: {steps} | "
-            f"Time: {compute_time * 1000:.2f} ms | "
-            f"Surviving cells: {path_len}{path_note} | Cost: {path_cost}"
-        ),
+        "message": msg,
     }
