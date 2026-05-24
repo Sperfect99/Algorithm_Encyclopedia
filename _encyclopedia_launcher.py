@@ -11,6 +11,7 @@ Flags (run with --help for the full list):
   --tsp            TSP / Treasure Hunt module
   --mapf           Multi-Agent Pathfinding module
   --pursuit        Pursuit-Evasion module
+  --check          Verify Python version, terminal size, and ANSI support
   --help           Print flag descriptions and exit
 """
 
@@ -51,6 +52,8 @@ def _parse_flags() -> dict:
         if arg == "--help":
             _print_help()
             sys.exit(0)
+        elif arg == "--check":
+            sys.exit(_run_check())
         elif arg == "--learn":
             flags["mode"] = "learn"
         elif arg == "--classic":
@@ -64,6 +67,150 @@ def _parse_flags() -> dict:
         i += 1
 
     return flags
+
+
+def _run_check() -> int:
+    """Run environment checks and print a summary.
+
+    Returns 0 when everything is ready, 1 when at least one hard requirement
+    is not met. Soft warnings (e.g. terminal just barely big enough) still
+    return 0 so CI scripts can distinguish 'broken' from 'suboptimal'.
+    """
+    import platform
+
+    W       = min(_term_width(), 72)
+    divider = "─" * W
+    passed  = []
+    warnings= []
+    failures= []
+
+    def _ok(label, detail=""):
+        passed.append((label, detail))
+
+    def _warn(label, detail=""):
+        warnings.append((label, detail))
+
+    def _fail(label, detail=""):
+        failures.append((label, detail))
+
+    # ── Python version ────────────────────────────────────────────────────
+    vi = sys.version_info
+    version_str = f"{vi.major}.{vi.minor}.{vi.micro}"
+    if (vi.major, vi.minor) >= (3, 9):
+        _ok("Python version", f"{version_str} ✓  (3.9+ required)")
+    else:
+        _fail("Python version",
+              f"{version_str}  —  upgrade to 3.9 or newer before running")
+
+    # ── Terminal size ─────────────────────────────────────────────────────
+    cols = _term_width()
+    rows = _term_height()
+    size_str = f"{cols}×{rows}"
+
+    if cols >= 120 and rows >= 35:
+        _ok("Terminal size", f"{size_str}  —  all features available")
+    elif cols >= 80 and rows >= 30:
+        _warn("Terminal size",
+              f"{size_str}  —  minimum met; Race Mode needs ≥120 cols, "
+              f"Explainer split screen needs ≥maze_width+50 cols")
+    else:
+        _fail("Terminal size",
+              f"{size_str}  —  minimum is 80×30; resize your terminal window")
+
+    # ── ANSI colour support ───────────────────────────────────────────────
+    try:
+        from ui.theme import _ANSI as _ansi_flag
+        if _ansi_flag:
+            _ok("ANSI colours", "supported ✓")
+        else:
+            _fail("ANSI colours",
+                  "not detected — use Windows Terminal or VS Code terminal, "
+                  "not cmd.exe or old PowerShell")
+    except Exception:
+        _warn("ANSI colours", "could not read theme flag — assumed unsupported")
+
+    # ── Platform ──────────────────────────────────────────────────────────
+    plat     = platform.system()
+    plat_ver = platform.version()[:40]
+    if plat == "Windows":
+        # WT_SESSION is set exclusively by Windows Terminal.
+        # VS Code's integrated terminal sets TERM_PROGRAM=vscode instead.
+        wt  = bool(os.environ.get("WT_SESSION"))
+        vsc = os.environ.get("TERM_PROGRAM") == "vscode"
+        if wt or vsc:
+            term_name = "Windows Terminal" if wt else "VS Code terminal"
+            _ok("Platform", f"Windows — running inside {term_name} ✓")
+        else:
+            _warn("Platform",
+                  f"Windows ({plat_ver})  —  use Windows Terminal or VS Code; "
+                  f"cmd.exe and old PowerShell may show garbled output")
+    else:
+        _ok("Platform", f"{plat} ({platform.release()})")
+
+    # ── stdout is a TTY ──────────────────────────────────────────────────
+    if sys.stdout.isatty():
+        _ok("stdout", "interactive TTY ✓")
+    else:
+        _warn("stdout", "not a TTY — running in a pipe or redirected; "
+              "animations will not display correctly")
+
+    # ── Required files present ────────────────────────────────────────────
+    here = os.path.dirname(os.path.abspath(__file__))
+    required = [
+        "maze_controller.py",
+        "treasure_solver2.py",
+        "multi_agent_solver.py",
+        "dynamic_solver3.py",
+        os.path.join("ui", "theme.py"),
+        os.path.join("ui", "terminal_utils.py"),
+        os.path.join("ui", "renderer.py"),
+        os.path.join("ui", "animation.py"),
+        os.path.join("core", "types.py"),
+        os.path.join("core", "grid.py"),
+        os.path.join("core", "graph.py"),
+        "maze_genV4.py",
+    ]
+    missing = [f for f in required if not os.path.isfile(os.path.join(here, f))]
+    if missing:
+        for m in missing:
+            _fail("Missing file", m)
+    else:
+        _ok("Required files", f"all {len(required)} present ✓")
+
+    # ── Print report ──────────────────────────────────────────────────────
+    print(f"\n{divider}")
+    print(_center_ansi(f"{C_HEAD}⚙  Algorithm Encyclopedia — Environment Check{C_END}", W))
+    print(divider)
+
+    for label, detail in passed:
+        print(f"  {C_PATH}✓{C_END}  {label:<22}  {C_DIM}{detail}{C_END}")
+
+    for label, detail in warnings:
+        print(f"  {C_START}⚠{C_END}  {label:<22}  {C_DIM}{detail}{C_END}")
+
+    for label, detail in failures:
+        print(f"  {C_BACK}✗{C_END}  {label:<22}  {detail}")
+
+    print(divider)
+
+    if failures:
+        print(f"\n  {C_BACK}Not ready.{C_END} Fix the items marked ✗ above, then run --check again.")
+        result = 1
+    elif warnings:
+        print(f"\n  {C_START}Ready with warnings.{C_END}"
+              f" The program will run but some features may be limited.")
+        result = 0
+    else:
+        print(f"\n  {C_PATH}All checks passed.{C_END} Run without flags to start.")
+        result = 0
+
+    print()
+    try:
+        input("  Press ENTER to exit…")
+    except (KeyboardInterrupt, EOFError):
+        print()
+
+    return result
 
 
 def _print_help() -> None:
@@ -83,12 +230,18 @@ def _print_help() -> None:
   {C_PATH}--mapf{C_END}       Opens the Multi-Agent Pathfinding module directly.
   {C_PATH}--pursuit{C_END}    Opens the Pursuit-Evasion module directly.
 
+  {C_PATH}--check{C_END}      Verify that your environment can run the program:
+               Python version, terminal size, ANSI colour support,
+               platform, and all required files. Exit code 0 = ready,
+               1 = something needs fixing.
+
   {C_PATH}--help{C_END}       Show this message.
 
   {C_DIM}No flags → opens the main launcher menu (default).{C_END}
 
 {C_DIM}Examples:
   python _encyclopedia_launcher.py
+  python _encyclopedia_launcher.py --check
   python _encyclopedia_launcher.py --learn
   python _encyclopedia_launcher.py --classic
   python _encyclopedia_launcher.py --help{C_END}
