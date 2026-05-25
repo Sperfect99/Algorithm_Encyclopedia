@@ -398,10 +398,10 @@ def setup_new_session(
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 # ===========================================================================
 
-def main() -> None:
+def main(seed: int | None = None) -> None:
     """Entry point with clean KeyboardInterrupt / EOFError handling."""
     try:
-        _main_loop()
+        _main_loop(seed=seed)
     except (KeyboardInterrupt, EOFError):
         restore_terminal()
     except Exception:
@@ -409,8 +409,15 @@ def main() -> None:
         raise
 
 
-def _main_loop() -> None:
+def _main_loop(seed: int | None = None) -> None:
     """Interactive session loop."""
+    import random as _random
+    _base_seed:    int | None = seed
+    _maze_count:   int        = 0
+    _current_seed: int        = (
+        seed if seed is not None else _random.randint(1, 999_999)
+    )
+
 
     generator_type: str = "dfs"
 

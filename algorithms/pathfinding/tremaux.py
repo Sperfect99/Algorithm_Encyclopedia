@@ -222,7 +222,7 @@ def solve(
             "title":   "Trémaux (Chalk marks)",
             "restore": restore,
             "pq_info": "",
-            "extra": {"algo": "tremaux", "marks_here": sum(_marks(curr, (r+dr, c+dc)) for dr,dc in ((-1,0),(0,1),(1,0),(0,-1)))},
+            "extra": {"algo": "tremaux", "marks_here": sum(_marks((r, c), (r+dr, c+dc)) for dr,dc in ((-1,0),(0,1),(1,0),(0,-1)))},
         }
 
     # Unreachable — satisfies type checkers.

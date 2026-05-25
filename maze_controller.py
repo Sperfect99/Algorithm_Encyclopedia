@@ -567,11 +567,11 @@ def _compact_menu(
 
 # --- MAIN LOOP ---
 
-def main(mode: str = "full") -> None:
+def main(mode: str = "full", seed: int | None = None) -> None:
     """Entry point. Wraps the session loop with clean Ctrl-C / EOF handling
     so the terminal doesn't get a noisy traceback when running in class."""
     try:
-        _main_loop(mode=mode)
+        _main_loop(mode=mode, seed=seed)
     except (KeyboardInterrupt, EOFError):
         restore_terminal()
     except Exception:
@@ -579,17 +579,40 @@ def main(mode: str = "full") -> None:
         raise
 
 
-def _main_loop(mode: str = "full") -> None:
+def _main_loop(mode: str = "full", seed: int | None = None) -> None:
     """The actual interactive session. Extracted from main() so the exception
     handler in main() stays clean.
 
     mode='full'  — everything visible, default behaviour
     mode='learn' — algorithms 1-15 + Tutorial + Fog + Hypothesis only;
                    no Benchmark, Race, Multi-run, Generator, or plugins
+    seed         — starting random seed; None means random per maze
     """
+    import random as _random
+
     _learn = (mode == "learn")
 
-    generator_type: str = "dfs"   # cycles via option 22: dfs → kruskal → prim
+    # Seed tracking — each maze gets a deterministic seed derived from the
+    # base. If no --seed was given, each maze picks its own random seed so
+    # the session is still reproducible one maze at a time (seed shown in HUD).
+    _base_seed:   int | None = seed
+    _maze_count:  int        = 0
+    _current_seed: int       = (
+        seed if seed is not None else _random.randint(1, 999_999)
+    )
+
+    def _next_seed() -> int:
+        """Return the seed for the next maze and advance the counter."""
+        nonlocal _maze_count, _current_seed
+        if _base_seed is not None:
+            s = _base_seed + _maze_count
+        else:
+            s = _random.randint(1, 999_999)
+        _maze_count  += 1
+        _current_seed = s
+        return s
+
+    generator_type: str = "dfs"
 
     # No maze at startup — generated the first time an algorithm is chosen.
     # These defaults are used until setup_new_maze() is called.
@@ -601,8 +624,10 @@ def _main_loop(mode: str = "full") -> None:
     terrain_active: bool           = False
 
     def _setup_maze() -> None:
-        """Run setup, compute stats, show topology panel. Updates outer vars."""
+        """Run setup, seed the RNG, compute stats, show topology panel."""
         nonlocal my_maze, _stats, _diff, delay, skip_frames, terrain_active, generator_type
+        s = _next_seed()
+        _random.seed(s)
         my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
         _stats = maze_analyse(my_maze)
         _diff  = _stats.difficulty
@@ -646,6 +671,7 @@ def _main_loop(mode: str = "full") -> None:
         gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
         _dc         = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
         diff_lbl    = f"{_dc}{_diff:>3}{C_END}" if _diff >= 0 else f"{C_DIM} — {C_END}"
+        seed_lbl    = f"{C_DIM}{_current_seed}{C_END}" if my_maze is not None else f"{C_DIM} — {C_END}"
         if _active_h_idx < 0:
             _adm = "?"   # plugin — admissibility unknown until proven
         elif _heuristic_presets[_active_h_idx][1]:
@@ -720,6 +746,7 @@ def _main_loop(mode: str = "full") -> None:
                 f"  |  Fog: {fog_lbl}"
                 f"  |  Gen: {gen_lbl}"
                 f"  |  Diff: {diff_lbl}"
+                f"  |  Seed: {seed_lbl}"
             )
             print(f"  {C_DIM}A* heuristic: {h_lbl}   [h] to change{C_END}")
             print()

@@ -211,13 +211,21 @@ python dynamic_solver3.py      # Pursuit-Evasion
 CLI flags:
 
 ```bash
-python _encyclopedia_launcher.py --learn     # simplified menu for classroom use
-python _encyclopedia_launcher.py --classic   # jump straight to Classic Pathfinding
-python _encyclopedia_launcher.py --tsp       # jump straight to TSP
-python _encyclopedia_launcher.py --mapf      # jump straight to MAPF
-python _encyclopedia_launcher.py --pursuit   # jump straight to Pursuit-Evasion
-python _encyclopedia_launcher.py --help      # list all flags
+python _encyclopedia_launcher.py --learn        # simplified menu for classroom use
+python _encyclopedia_launcher.py --classic      # jump straight to Classic Pathfinding
+python _encyclopedia_launcher.py --tsp          # jump straight to TSP
+python _encyclopedia_launcher.py --mapf         # jump straight to MAPF
+python _encyclopedia_launcher.py --pursuit      # jump straight to Pursuit-Evasion
+python _encyclopedia_launcher.py --seed 42      # reproducible maze — same seed = same maze sequence
+python _encyclopedia_launcher.py --seed 42 --classic
+python _encyclopedia_launcher.py --check        # verify Python version, terminal size, ANSI support
+python _encyclopedia_launcher.py --test         # run algorithm smoke tests and exit
+python _encyclopedia_launcher.py --test-v       # verbose smoke tests
+python _encyclopedia_launcher.py --test-fast    # smoke tests, skip the three slowest algorithms
+python _encyclopedia_launcher.py --help         # list all flags
 ```
+
+**Before the first run on a new machine:** `python _encyclopedia_launcher.py --check` verifies Python 3.9+, terminal size, and ANSI colour support. Exit code 0 = ready.
 
 **First run:** pick complexity **3 or 4**, speed **Normal**, no terrain. Start with BFS (option 1) and A\* (option 3) — run both on the same maze and then use **Duel** (option d after each run) to overlay the two paths. That single comparison shows more than an hour of reading.
 
@@ -260,6 +268,9 @@ algorithm-encyclopedia/
 │   └── heuristics/
 │       └── _template.py          # starting point for a custom A* heuristic plugin
 │
+├── tests/
+│   └── smoke_tests.py            # runs all 15 algorithms on a known maze; exit code 0 = all pass
+│
 └── ui/
     ├── theme.py                  # all ANSI colour constants
     ├── terminal_utils.py         # cursor control, precise_sleep, ANSI stripping
@@ -294,11 +305,15 @@ The core visualiser is **complete and stable**. Active development continues.
 - CLI flags (`--learn`, `--classic`, `--tsp`, `--mapf`, `--pursuit`, `--help`)
 - Pursuit-Evasion: dynamic oscillating walls as a toggleable mode
 - Menu-first flow in all four modules — maze generates on first algorithm pick, not at startup
+- Reproducible seed — `--seed N` flag; the active seed is shown in the HUD; same seed = same maze sequence
+- `--check` flag — verifies Python version, terminal size, ANSI support, platform, and all required files; exit code 0/1 for CI
+- `--test` flag — runs `tests/smoke_tests.py` from the launcher; `--test-v` verbose, `--test-fast` skips slow algorithms
+- Smoke tests (`tests/smoke_tests.py`) — all 15 algorithms on an 11×21 DFS-generated maze; optimal path length validated for BFS, A\*, Dijkstra, IDA\*, Bellman-Ford
+- Clean error boundaries in all four modules — `Ctrl+C` and unexpected crashes restore the terminal before printing any message; no more broken cursor or stale colours after a crash
 
 **Planned**
 
 *Core / stability*
-- [ ] Smoke tests for each algorithm on known mazes
 - [ ] Config file — save preferred speed, complexity, terrain, and generator between sessions
 - [ ] Graceful degradation when terminal is too small (currently a soft banner — next step is auto-adjusting)
 - [ ] Windows column-width review for Race Mode on cmd/PowerShell
@@ -331,7 +346,6 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] Bug hunt mode — a broken implementation with a classic bug; run it, see the wrong path, find the line
 
 *Research tools*
-- [ ] Reproducible seed mode — saves the random seed of each maze so the same maze can be reproduced exactly
 - [ ] Algorithm parameter tuning — interactive prompt for Genetic Algorithm parameters before each run
 - [ ] Admissibility tester — runs A\* with all six built-in heuristics and reports whether each produces an optimal path
 - [ ] Dead-end density control — control dead-end count independently from complexity level

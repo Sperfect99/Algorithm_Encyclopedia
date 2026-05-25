@@ -816,8 +816,15 @@ def setup_treasure_maze(
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 # ===========================================================================
 
-def _main_loop() -> None:
+def _main_loop(seed: int | None = None) -> None:
     """Inner session loop. Wrapped by main() for clean interrupt handling."""
+    import random as _random
+    _base_seed:    int | None = seed
+    _maze_count:   int        = 0
+    _current_seed: int        = (
+        seed if seed is not None else _random.randint(1, 999_999)
+    )
+
 
     generator_type: str = "dfs"
 
@@ -1035,13 +1042,13 @@ def _main_loop() -> None:
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 # ===========================================================================
 
-def main() -> None:
+def main(seed: int | None = None) -> None:
     """
     Entry point.  Wraps the session loop with a clean handler for
     KeyboardInterrupt and EOFError.
     """
     try:
-        _main_loop()
+        _main_loop(seed=seed)
     except (KeyboardInterrupt, EOFError):
         restore_terminal()
     except Exception:

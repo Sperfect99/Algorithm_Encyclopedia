@@ -11,6 +11,10 @@ Flags (run with --help for the full list):
   --tsp            TSP / Treasure Hunt module
   --mapf           Multi-Agent Pathfinding module
   --pursuit        Pursuit-Evasion module
+  --seed N         Set the starting random seed (integer) for reproducible mazes
+  --test           Run the algorithm smoke tests and exit
+  --test-v         Run smoke tests in verbose mode
+  --test-fast      Run smoke tests skipping the three slowest algorithms
   --check          Verify Python version, terminal size, and ANSI support
   --help           Print flag descriptions and exit
 """
@@ -52,6 +56,9 @@ def _parse_flags() -> dict:
         if arg == "--help":
             _print_help()
             sys.exit(0)
+        elif arg in ("--test", "--test-v", "--test-fast"):
+            sys.exit(_run_tests(verbose="--test-v" in args,
+                                fast="--test-fast" in args))
         elif arg == "--check":
             sys.exit(_run_check())
         elif arg == "--learn":
@@ -64,9 +71,111 @@ def _parse_flags() -> dict:
             flags["mode"] = "mapf"
         elif arg == "--pursuit":
             flags["mode"] = "pursuit"
+        elif arg == "--seed":
+            if i + 1 < len(args):
+                try:
+                    flags["seed"] = int(args[i + 1])
+                    i += 1  # consume the value
+                except ValueError:
+                    print(f"  --seed expects an integer, got: {args[i + 1]}")
         i += 1
 
     return flags
+
+
+def _run_tests(verbose: bool = False, fast: bool = False) -> int:
+    """Locate and run tests/smoke_tests.py from the project root.
+
+    Returns 0 when all tests pass, 1 when any fail, 2 when the test
+    file cannot be found (prevents silent CI green on missing file).
+
+    The input() at the end keeps results visible before the alternate
+    screen is exited — without it the output disappears immediately.
+    """
+    import importlib.util
+
+    here      = os.path.dirname(os.path.abspath(__file__))
+    test_path = os.path.join(here, "tests", "smoke_tests.py")
+
+    if not os.path.isfile(test_path):
+        print(
+            f"\n  {C_BACK}✗  tests/smoke_tests.py not found at:{C_END}\n"
+            f"     {test_path}\n"
+            f"  Add the file to run tests from the launcher.\n"
+        )
+        try:
+            input("  Press ENTER to exit…")
+        except (KeyboardInterrupt, EOFError):
+            pass
+        return 2
+
+    try:
+        spec   = importlib.util.spec_from_file_location("smoke_tests", test_path)
+        module = importlib.util.module_from_spec(spec)      # type: ignore[arg-type]
+        spec.loader.exec_module(module)                      # type: ignore[union-attr]
+    except Exception as exc:
+        print(
+            f"\n  {C_BACK}✗  Failed to load tests/smoke_tests.py:{C_END}\n"
+            f"     {type(exc).__name__}: {exc}\n"
+        )
+        try:
+            input("  Press ENTER to exit…")
+        except (KeyboardInterrupt, EOFError):
+            pass
+        return 2
+
+    # Print the same header that smoke_tests.main() would print so the
+    # output makes sense without knowing which maze the tests use.
+    import collections
+
+    def _bfs(maze):
+        rows, cols = len(maze), len(maze[0])
+        goal = (rows - 1, cols - 1)
+        q = collections.deque([(0, 0, 1)])
+        vis = {(0, 0)}
+        passable = {0, 'S', 'E', '~'}
+        dirs = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+        while q:
+            r, c, d = q.popleft()
+            if (r, c) == goal:
+                return d
+            for dr, dc in dirs:
+                nr, nc = r + dr, c + dc
+                if (0 <= nr < rows and 0 <= nc < cols
+                        and (nr, nc) not in vis
+                        and maze[nr][nc] in passable):
+                    vis.add((nr, nc))
+                    q.append((nr, nc, d + 1))
+        return 0
+
+    maze    = module.SMOKE_MAZE
+    rows    = len(maze)
+    cols    = len(maze[0])
+    optimal = _bfs(maze)
+    W       = min(_term_width(), 72)
+
+    print()
+    print(f"  {C_HEAD}Algorithm Encyclopedia — Smoke Tests{C_END}")
+    print(f"  Maze: {rows}×{cols}   BFS optimal (all cells): {optimal}   "
+          f"Expected path_len: {module.OPTIMAL_PATH_LEN}")
+    print(f"  {'─' * (W - 2)}")
+
+    ok = module.run_all(verbose=verbose, skip_slow=fast)
+
+    print()
+    if ok:
+        print(f"  {C_PATH}All tests passed.{C_END}")
+    else:
+        print(f"  {C_BACK}Some tests failed. See above for details.{C_END}")
+
+    print()
+    try:
+        input("  Press ENTER to exit…")
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+    return 0 if ok else 1
+
 
 
 def _run_check() -> int:
@@ -230,6 +339,15 @@ def _print_help() -> None:
   {C_PATH}--mapf{C_END}       Opens the Multi-Agent Pathfinding module directly.
   {C_PATH}--pursuit{C_END}    Opens the Pursuit-Evasion module directly.
 
+  {C_PATH}--seed N{C_END}     Set the random seed used for maze generation.
+               Run with the same seed to reproduce the exact same maze.
+               The active seed is shown in the HUD during every session.
+               Example: --seed 42
+
+  {C_PATH}--test{C_END}       Run the algorithm smoke tests and exit.
+               Equivalent to: python tests/smoke_tests.py
+               Flags: --test-v (verbose)  --test-fast (skip slow algos)
+
   {C_PATH}--check{C_END}      Verify that your environment can run the program:
                Python version, terminal size, ANSI colour support,
                platform, and all required files. Exit code 0 = ready,
@@ -241,7 +359,11 @@ def _print_help() -> None:
 
 {C_DIM}Examples:
   python _encyclopedia_launcher.py
+  python _encyclopedia_launcher.py --test
+  python _encyclopedia_launcher.py --test-v
   python _encyclopedia_launcher.py --check
+  python _encyclopedia_launcher.py --seed 42
+  python _encyclopedia_launcher.py --seed 42 --classic
   python _encyclopedia_launcher.py --learn
   python _encyclopedia_launcher.py --classic
   python _encyclopedia_launcher.py --help{C_END}
@@ -410,7 +532,7 @@ def _launch_module(module_name: str, display_title: str, **kwargs) -> None:
 
 # --- main menu loop ---
 
-def _master_menu() -> None:
+def _master_menu(seed: int | None = None) -> None:
     dispatch: dict[str, tuple[str, str]] = {
         key: (mod, title) for key, mod, title, _ in _MODULES
     }
@@ -507,7 +629,8 @@ def _master_menu() -> None:
 
         if choice in dispatch:
             module_name, display_title = dispatch[choice]
-            _launch_module(module_name, display_title)
+            _launch_module(module_name, display_title,
+                           **({"seed": seed} if seed is not None else {}))
             continue
 
         print(f"\n  {C_HEAD}Invalid option — please enter 0–4.{C_END}")
@@ -519,22 +642,35 @@ def _master_menu() -> None:
 def main() -> None:
     flags = _parse_flags()
     mode  = flags["mode"]
+    seed  = flags.get("seed")          # None when --seed was not given
 
     # Direct module shortcuts — skip the launcher menu entirely
-    _DIRECT: dict[str, tuple[str, str, dict]] = {
-        "learn":   ("maze_controller",    "Classic Pathfinding",          {"mode": "learn"}),
-        "classic": ("maze_controller",    "Classic Pathfinding",          {}),
-        "tsp":     ("treasure_solver2",   "TSP / Treasure Hunt",          {}),
-        "mapf":    ("multi_agent_solver", "MAPF — Multi-Agent Pathfinding", {}),
-        "pursuit": ("dynamic_solver3",    "Pursuit-Evasion",              {}),
+    _base_kwargs: dict[str, dict] = {
+        "learn":   {"mode": "learn"},
+        "classic": {},
+        "tsp":     {},
+        "mapf":    {},
+        "pursuit": {},
     }
+    _DIRECT: dict[str, tuple[str, str, dict]] = {
+        "learn":   ("maze_controller",    "Classic Pathfinding",           _base_kwargs["learn"]),
+        "classic": ("maze_controller",    "Classic Pathfinding",           _base_kwargs["classic"]),
+        "tsp":     ("treasure_solver2",   "TSP / Treasure Hunt",           _base_kwargs["tsp"]),
+        "mapf":    ("multi_agent_solver", "MAPF — Multi-Agent Pathfinding", _base_kwargs["mapf"]),
+        "pursuit": ("dynamic_solver3",    "Pursuit-Evasion",               _base_kwargs["pursuit"]),
+    }
+
+    # Inject seed into every direct-mode kwarg dict so the module receives it.
+    if seed is not None:
+        for kw in _base_kwargs.values():
+            kw["seed"] = seed
 
     try:
         if mode in _DIRECT:
             module_name, display_title, kwargs = _DIRECT[mode]
             _launch_module(module_name, display_title, **kwargs)
         else:
-            _master_menu()
+            _master_menu(seed=seed)
     except (KeyboardInterrupt, EOFError):
         print(f"\033[0m\n\n{C_DOT}Interrupted — goodbye! 🚀{C_END}\n")
     finally:
