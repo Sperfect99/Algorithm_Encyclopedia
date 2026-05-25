@@ -924,6 +924,9 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             continue
 
         elif choice == "21":
+            if my_maze is None:
+                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                continue
             run_multi_stats(dispatch_fn=_dispatch_algorithm, generator=generator_type)
             flush_stdin()
             continue
@@ -959,6 +962,9 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             continue
 
         elif choice == "20":
+            if my_maze is None:
+                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                continue
             run_race(
                 my_maze, delay, skip_frames, terrain_active, fog_mode,
                 dispatch_fn=_dispatch_algorithm,
