@@ -498,6 +498,7 @@ def _compact_menu(
     size_lbl:       str = "",
     diff_lbl:       str = "",
     h_lbl:          str = "",
+    no_maze:        bool = False,
 ) -> None:
     """2-column algorithm grid for short terminals.
 
@@ -547,10 +548,13 @@ def _compact_menu(
     print("─" * W)
 
     t_on = terrain_active
+    gen23 = (f"  {C_PATH}23.⚡GenMaze{C_END}" if no_maze
+             else f"  23.⚡GenMaze")
     print(
         f"  16.🏆Benchmark  17.📚Tutorial"
         f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
         f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats  22.🗺️Gen:{gen_lbl}"
+        f"{gen23}"
         f"  {C_DIM}[n]New  [t]Topo  [x]Export{C_END}"
     )
     print(
@@ -770,6 +774,12 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
             print(f"  22. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
+            if my_maze is None:
+                print(f"  {C_PATH}23. ⚡  Generate Maze{C_END}  "
+                      f"{C_BACK}← no maze yet — start here before Race or Benchmark{C_END}")
+            else:
+                print(f"  23. ⚡  Generate Maze  "
+                      f"{C_DIM}(replaces current maze){C_END}")
             print(f"  {C_DIM}[n] New maze   [t] Topology   [x] Export ASCII{C_END}")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
             print(f"  {C_PQ}  🗂  PQ Inspector — active for A*, Dijkstra, Greedy [PQ✦]{C_END}")
@@ -790,13 +800,15 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 size_lbl,
                 diff_lbl,
                 h_lbl,
+                no_maze=my_maze is None,
             )
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
         _plug_hint = f" or {'/'.join(_plugins)}" if _plugins and not _learn else ""
         _no_maze   = my_maze is None
+        _top       = max(23, _max_algo)
         choice     = input(
-            f"Choose an option (0–{max(22, _max_algo) if not _learn else '19'}{_plug_hint}"
+            f"Choose an option (0–{_top if not _learn else '19'}{_plug_hint}"
             f"{', n=new maze' if not _no_maze else ''}): "
         ).strip()
 
@@ -907,7 +919,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
 
         elif choice == "16":
             if my_maze is None:
-                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
                 continue
             run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, maze_diff=_diff, stats=_stats, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
@@ -925,7 +937,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
 
         elif choice == "21":
             if my_maze is None:
-                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
                 continue
             run_multi_stats(dispatch_fn=_dispatch_algorithm, generator=generator_type)
             flush_stdin()
@@ -961,9 +973,13 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             time.sleep(1.2)
             continue
 
+        elif choice == "23":
+            _setup_maze()
+            continue
+
         elif choice == "20":
             if my_maze is None:
-                print(f"  {C_BACK}Generate a maze first — pick an algorithm (1-15).{C_END}")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
                 continue
             run_race(
                 my_maze, delay, skip_frames, terrain_active, fog_mode,
