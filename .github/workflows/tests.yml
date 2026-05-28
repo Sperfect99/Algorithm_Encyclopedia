@@ -17,6 +17,9 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
+    env:
+      PYTHONUTF8: "1"   # Windows cmd defaults to cp1252 — force UTF-8 everywhere
+
     steps:
       - uses: actions/checkout@v4
 
