@@ -4,6 +4,8 @@
 
 ### Watch algorithms solve mazes in real-time — pure Python, zero dependencies.
 
+[![smoke tests](https://github.com/Sperfect99/Algorithm_Encyclopedia/actions/workflows/tests.yml/badge.svg)](https://github.com/Sperfect99/Algorithm_Encyclopedia/actions/workflows/tests.yml)
+
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange?style=flat-square)]()
@@ -227,6 +229,15 @@ python _encyclopedia_launcher.py --help         # list all flags
 
 **Before the first run on a new machine:** `python _encyclopedia_launcher.py --check` verifies Python 3.9+, terminal size, and ANSI colour support. Exit code 0 = ready.
 
+**Running the tests directly** (no TTY needed, works in CI):
+```bash
+python tests/smoke_tests.py          # all 15 algorithms
+python tests/smoke_tests.py -v       # verbose output
+python tests/smoke_tests.py --fast   # skip the three slowest algorithms
+```
+
+**CI:** every push and pull request runs the full test matrix automatically — Python 3.9–3.12 on Linux, macOS, and Windows.
+
 **First run:** pick complexity **3 or 4**, speed **Normal**, no terrain. Start with BFS (option 1) and A\* (option 3) — run both on the same maze and then use **Duel** (option d after each run) to overlay the two paths. That single comparison shows more than an hour of reading.
 
 ---
@@ -271,6 +282,10 @@ algorithm-encyclopedia/
 ├── tests/
 │   └── smoke_tests.py            # runs all 15 algorithms on a known maze; exit code 0 = all pass
 │
+├── .github/
+│   └── workflows/
+│       └── tests.yml             # CI: runs smoke_tests on py3.9–3.12, Linux/macOS/Windows
+│
 └── ui/
     ├── theme.py                  # all ANSI colour constants
     ├── terminal_utils.py         # cursor control, precise_sleep, ANSI stripping
@@ -310,6 +325,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - `--test` flag — runs `tests/smoke_tests.py` from the launcher; `--test-v` verbose, `--test-fast` skips slow algorithms
 - Smoke tests (`tests/smoke_tests.py`) — all 15 algorithms on an 11×21 DFS-generated maze; optimal path length validated for BFS, A\*, Dijkstra, IDA\*, Bellman-Ford
 - Clean error boundaries in all four modules — `Ctrl+C` and unexpected crashes restore the terminal before printing any message; no more broken cursor or stale colours after a crash
+- CI via GitHub Actions — smoke tests run automatically on every push and pull request across Python 3.9–3.12 on Linux, macOS, and Windows
 
 **Planned**
 
