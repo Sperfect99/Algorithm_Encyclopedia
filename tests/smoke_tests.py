@@ -39,6 +39,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from algorithms.registry import _REGISTRY, _get_generator
+from core.graph import validate_path
 
 # ---------------------------------------------------------------------------
 # Maze generator — embedded, self-contained
@@ -300,6 +301,12 @@ def run_all(verbose: bool = False, skip_slow: bool = False) -> bool:
 
             elif bfs_cells == 0 and result.path_len > 0:
                 errors.append("found a path on an unsolvable maze (phantom path)")
+
+            else:
+                # Physical path check — P cells must form a connected route S→E
+                path_err = validate_path(maze_copy, result.path_len, result.path_cost)
+                if path_err:
+                    errors.append(f"path correctness: {path_err}")
 
             if result.steps == float("inf") and result.path_len > 0:
                 errors.append("steps=inf but path_len>0 — inconsistent result")

@@ -27,7 +27,7 @@ from maze_genV4 import (
 
 from core.types        import RunResult, _StepRecord
 from core.grid         import terrain_cost, DIRECTIONS, PASSABLE
-from core.graph        import manhattan_distance
+from core.graph        import manhattan_distance, validate_path
 from ui.theme          import *                           # noqa: F401,F403
 from ui.terminal_utils import (
     clear_screen, _strip_ansi, _visual_width, _center_ansi,
@@ -1023,6 +1023,15 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
 
 
             show_report_card(_ALGO_NAMES[choice], result, terrain_active, maze_diff=_diff)
+
+            # Sanity check — catches algorithm bugs where the reported path_len
+            # doesn't match what was actually stamped on the maze.
+            # m_copy is used here, not my_maze — the algorithm runs on the copy
+            # so that my_maze stays clean for heatmap, duel, and the next run.
+            if result.path_len > 0:
+                _path_err = validate_path(m_copy, result.path_len, result.path_cost)
+                if _path_err:
+                    print(f"  {C_BACK}⚠  path validator: {_path_err}{C_END}")
 
             if hypothesis_mode and predictions:
                 pts      = _hypothesis_post_run(predictions, result, _ALGO_NAMES[choice])
