@@ -41,13 +41,13 @@ def solve(
     *  **Not optimal**: ignores accumulated cost ``g``.  On terrain with
        mud (cost 3) it will march through swamps if that is the straight-
        line direction, whereas A* would route around them.
-    *  **Faster than A\***: fewer nodes expanded on average, because the
+    *  **Faster than A***: fewer nodes expanded on average, because the
        heuristic aggressively prunes the frontier — at the cost of path
        quality.
 
-    Contrast with A\*
+    Contrast with A*
     -----------------
-    A\* uses ``f = g + h``; Greedy uses ``f = h``.  Setting ``g = 0``
+    A* uses ``f = g + h``; Greedy uses ``f = h``.  Setting ``g = 0``
     removes the "how far did I travel?" term entirely.  The result is a
     search that is pulled toward the goal like a magnet, but may take a
     longer or more expensive route to get there.

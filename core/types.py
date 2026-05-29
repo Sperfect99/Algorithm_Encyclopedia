@@ -83,7 +83,7 @@ class MapfResult(NamedTuple):
     ``collisions``
         Conflict count with **algorithm-dependent semantics**:
 
-        *Independent A\**: total vertex conflicts observed during
+        *Independent A**: total vertex conflicts observed during
         simulation — can be large on dense maps.
 
         *Prioritized Planning*: always 0 by construction (space-time
@@ -97,7 +97,7 @@ class MapfResult(NamedTuple):
         (swap) conflicts in the best partial solution found so far,
         as computed by ``_count_all_conflicts()``.  May be > 1.
 
-        Students comparing Independent A\* vs CBS should interpret
+        Students comparing Independent A* vs CBS should interpret
         this field as: "how many conflicts are still present in the
         paths being displayed?"  A value of 0 always means
         conflict-free; any positive value means agents will collide.
