@@ -298,11 +298,14 @@ def setup_new_maze(
     tw = _term_width()
     th = _term_height()
 
-    # Which levels actually fit right now — a maze needs at least maze_cols
-    # terminal columns and maze_rows+5 rows (legend + HUD + breathing room).
-    max_level = max(
-        (lvl for lvl, (r, c) in MAZE_SIZES.items()
-         if c <= tw and r + 5 <= th),
+    # Levels that fit without any clipping.  The +2 accounts for the two-space
+    # left margin the renderer prints on every row.  Levels above this threshold
+    # still work — they get a warning, not a hard block.
+    def _fits(r: int, c: int) -> bool:
+        return c + 2 <= tw and r + 5 <= th
+
+    max_fits = max(
+        (lvl for lvl, (r, c) in MAZE_SIZES.items() if _fits(r, c)),
         default=0,
     )
 
@@ -312,29 +315,33 @@ def setup_new_maze(
         race_note = ""
         if c * 2 + 7 > 120:
             race_note = f"  {C_RACE}(Race Mode needs ≥{c*2+7} cols){C_END}"
-        if lvl > max_level:
-            print(f"  {C_DIM}{lvl:>2}  →  {r:>2} × {c:<3} grid  (needs {c}×{r+5} terminal){C_END}")
+        if not _fits(r, c):
+            print(
+                f"  {C_DIM}{lvl:>2}  →  {r:>2} × {c:<3} grid  "
+                f"(needs {c+2}×{r+5} terminal — yours is {tw}×{th}){C_END}"
+            )
         else:
             print(f"  {lvl:>2}  →  {r:>2} × {c:<3} grid  ({label}){race_note}")
 
-    if max_level < 10:
+    if max_fits < 10:
         print(
-            f"\n  {C_BACK}⚠  Levels {max_level + 1}–10 need a larger terminal."
-            f"  Resize to unlock them.{C_END}"
+            f"\n  {C_DIM}Levels {max_fits + 1}–10 shown above may clip on your current "
+            f"terminal ({tw}×{th}).  You can still pick them — resize first "
+            f"or ignore if you know your terminal is wide enough.{C_END}"
         )
 
     print()
     while True:
-        raw = input(f"Enter level (0-{max_level}) or [L] load a saved maze: ").strip()
+        raw = input("Enter level (0-10) or [L] load a saved maze: ").strip()
         if raw.lower() in {'l', 'load'}:
             loaded = load_maze()
             if loaded:
                 maze, terrain_active, loaded_gen = loaded
                 l_rows, l_cols = len(maze), len(maze[0])
-                if l_cols > tw or l_rows + 5 > th:
+                if not _fits(l_rows, l_cols):
                     print(
-                        f"\n  {C_BACK}⚠  This maze ({l_rows}×{l_cols}) may be wider"
-                        f" than your terminal ({tw}×{th}).{C_END}"
+                        f"\n  {C_BACK}⚠  This maze ({l_rows}×{l_cols}) may clip"
+                        f" on your terminal ({tw}×{th}).{C_END}"
                         f"\n  Resize before running if it looks off."
                     )
                 delay, skip_frames = _prompt_speed()
@@ -342,18 +349,22 @@ def setup_new_maze(
             continue
         try:
             comp = int(raw)
-            if 0 <= comp <= max_level:
+            if 0 <= comp <= 10:
+                r, c = MAZE_SIZES[comp]
+                if not _fits(r, c):
+                    print(
+                        f"\n  {C_BACK}⚠  Level {comp} ({r}×{c}) needs a "
+                        f"{c+2}×{r+5} terminal — yours is {tw}×{th}."
+                        f"  It may clip, but you can run it anyway.{C_END}"
+                    )
+                    confirm = input("  Continue? (y/n): ").strip().lower()
+                    if confirm not in {'y', 'yes', ''}:
+                        continue
                 break
-            elif 0 <= comp <= 10:
-                print(
-                    f"  Level {comp} needs a {MAZE_SIZES[comp][1]}×"
-                    f"{MAZE_SIZES[comp][0]+5} terminal."
-                    f"  Max available now: {max_level}."
-                )
             else:
-                print(f"  Please enter 0–{max_level} or L.")
+                print("  Please enter 0–10 or L.")
         except ValueError:
-            print(f"  Invalid — enter a number (0–{max_level}) or L to load a file.")
+            print("  Invalid — enter a number (0–10) or L to load a file.")
 
     maze_rows, maze_cols = MAZE_SIZES[comp]
 

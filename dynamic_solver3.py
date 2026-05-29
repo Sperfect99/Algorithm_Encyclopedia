@@ -27,8 +27,9 @@ from dynamic_gen3      import (
 )
 
 from core.types        import PursuitResult
+from core.graph        import validate_pursuit_result
 from ui.theme          import (
-    C_BIGO, C_END, C_HEAD, C_PATH, C_TARGET, C_INTERCEPT, C_DOT,
+    C_BIGO, C_END, C_HEAD, C_PATH, C_TARGET, C_INTERCEPT, C_DOT, C_BACK,
     C_CONFLICT, C_WALL, C_DIM,
     ansi_enable_windows,
 )
@@ -511,6 +512,10 @@ def setup_new_session(
         if ans in {'y', 'yes'}:
             terrain_active = True
 
+    s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+    _current_seed = s
+    _maze_count  += 1
+    _random.seed(s)
     print("\n⏳ Generating maze… Please wait!")
     maze = generate_maze(comp, generator_type)
     if terrain_active:
@@ -595,6 +600,7 @@ def _main_loop(seed: int | None = None) -> None:
         )
         dynw_lbl = f"{C_TARGET}ON{C_END} " if dyn_walls else f"{C_DOT}OFF{C_END}"
         gen_lbl  = f"\033[96m{generator_type.upper()}\033[0m"
+        seed_lbl = f"{C_DIM}{_current_seed}{C_END}" if maze is not None else f"{C_DIM}—{C_END}"
 
         W = _term_width()
         print("\n" + "═" * W)
@@ -605,6 +611,8 @@ def _main_loop(seed: int | None = None) -> None:
                 f"  Maze: {C_BIGO}{rows}×{cols}{C_END}"
                 f"  |  Speed: {C_DOT}{speed_lbl}{C_END}"
                 f"  |  Terrain: {terrain_lbl}"
+                f"  |  Gen: {gen_lbl}"
+                f"  |  Seed: {seed_lbl}"
             )
         else:
             print(f"  {C_DIM}No maze yet — pick an algorithm to generate one.  |  Gen: {gen_lbl}{C_END}")
@@ -615,7 +623,6 @@ def _main_loop(seed: int | None = None) -> None:
             f"  |  Lookahead: {C_INTERCEPT}{lookahead}{C_END}"
             f"  |  Threshold: {C_BIGO}{threshold}{C_END}"
             f"  |  Dyn.Walls: {dynw_lbl}"
-            f"  |  Gen: {gen_lbl}"
         )
         if maze is not None:
             print(
@@ -634,16 +641,26 @@ def _main_loop(seed: int | None = None) -> None:
         print(f"  7.  🧱  Dynamic Walls         — {dynw_lbl}  (walls oscillate every 3-8 steps)")
         print(f"  {C_DOT}[g] Generator: {gen_lbl}   [t] Topology   [s] Save   [x] Export ASCII{C_END}")
         print("  6.  📚  Tutorial")
+        if maze is None:
+            print(f"  {C_PATH}8.  ⚡  Generate Maze{C_END}  {C_BACK}← start here{C_END}")
+        else:
+            print("  8.  ⚡  Generate Maze  (replace current scenario)")
         print("  0.  Exit")
         print("─" * W)
 
-        choice = input("Choose (0–7, or g/t/s): ").strip()
+        choice = input("Choose (0–8, or g/t/s): ").strip()
 
         if choice.lower() == "g":
-            _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
-            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
-            print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
-            time.sleep(0.7)
+            print(f"\n  🗺️  Choose generator:")
+            for _i, _g in enumerate(_GEN_CYCLE, 1):
+                _mark = f"{C_PATH}✔{C_END}" if _g == generator_type else " "
+                print(f"  {_mark} {_i}. {_g.upper()}")
+            _g_raw = input("  Pick (1–{n}): ".format(n=len(_GEN_CYCLE))).strip()
+            if _g_raw in {str(_i) for _i in range(1, len(_GEN_CYCLE) + 1)}:
+                generator_type = _GEN_CYCLE[int(_g_raw) - 1]
+                print(f"  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
+            else:
+                print(f"  {C_BACK}Unchanged.{C_END}")
             continue
 
         elif choice.lower() == "t":
@@ -686,6 +703,15 @@ def _main_loop(seed: int | None = None) -> None:
                 name, result, evasive, len(wall_schedule), lookahead, threshold
             )
 
+            # Sanity check — replans cannot exceed steps, and neither
+            # counter should ever be negative.
+            if result.steps > 0:
+                _res_err = validate_pursuit_result(
+                    result.steps, result.replans, result.caught,
+                )
+                if _res_err:
+                    print(f"  {C_BACK}⚠  result validator: {_res_err}{C_END}")
+
         elif choice == "4":
             maze_copy = [row[:] for row in maze]
             _run_comparison(
@@ -716,6 +742,12 @@ def _main_loop(seed: int | None = None) -> None:
 
         elif choice == "6":
             _show_tutorial()
+            continue
+
+        elif choice == "8":
+            result = setup_new_session(generator_type)
+            if result is not None:
+                maze, terrain_active, delay, skip_frames, agent_start, target_start, generator_type = result
             continue
 
         elif choice == "0":

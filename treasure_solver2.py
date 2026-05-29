@@ -19,6 +19,7 @@ from maze_views   import show_topology_panel
 from maze_modes   import save_maze, export_maze_ascii
 
 from core.types        import TreasureRunResult, _StepRecord
+from core.graph        import validate_tsp_result
 from ui.theme          import (                                # noqa: F401,F403
     C_WALL, C_DOT, C_BACK, C_HEAD, C_PATH, C_START, C_MUD, C_END,
     C_DUEL2, C_BIGO, C_TREASURE, C_COLLECTED, C_GA_LIVE, C_STAT,
@@ -767,6 +768,10 @@ def setup_treasure_maze(
     print("\n⏳ Generating maze and placing treasures… Please wait!")
 
     try:
+        s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+        _current_seed = s
+        _maze_count  += 1
+        _random.seed(s)
         maze, points, dist_matrix, cost_matrix, path_matrix = generate_treasure_map(
             complexity=comp,
             num_treasures=n_t,
@@ -856,6 +861,7 @@ def _main_loop(seed: int | None = None) -> None:
         cols = len(my_maze[0]) if my_maze is not None else 0
         terrain_lbl = f"{C_MUD}ON {C_END}" if terrain_active else f"{C_DOT}OFF{C_END}"
         gen_lbl     = f"\033[96m{generator_type.upper()}\033[0m"
+        seed_lbl    = f"{C_DIM}{_current_seed}{C_END}" if my_maze is not None else f"{C_DIM}—{C_END}"
         _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
             (n for k, n in _SPEED_NAMES.items()
@@ -872,7 +878,7 @@ def _main_loop(seed: int | None = None) -> None:
             print(
                 f"  Maze: {rows} × {cols}  |  Speed: {C_DOT}{speed_lbl}{C_END}"
                 f"  |  Treasures: {n_treasures}  |  Terrain: {terrain_lbl}"
-                f"  |  Gen: {gen_lbl}"
+                f"  |  Gen: {gen_lbl}  |  Seed: {seed_lbl}"
             )
         else:
             print(f"  {C_DIM}No maze yet — pick an algorithm to generate one.  |  Gen: {gen_lbl}{C_END}")
@@ -885,6 +891,10 @@ def _main_loop(seed: int | None = None) -> None:
         print("  ─── System ──────────────────────────────────────────────────")
         print("  4.  🏆  Benchmark        (all algorithms, same maze, comparison)")
         print("  5.  📚  Tutorial         (TSP theory, Big-O, algorithm deep-dives)")
+        if my_maze is None:
+            print(f"  {C_PATH}6.  ⚡  Generate Maze{C_END}     {C_BACK}← start here{C_END}")
+        else:
+            print("  6.  ⚡  Generate Maze     (replace current maze)")
         print(f"  {C_DOT}[g] Generator: {gen_lbl}  [{' → '.join(_GEN_CYCLE)}]"
               f"   [t] Topology   [x] Export ASCII   [n] New maze{C_END}")
         print("  0.  Exit")
@@ -894,7 +904,7 @@ def _main_loop(seed: int | None = None) -> None:
         )
         print("─" * W)
 
-        choice = input("Choose (0–5, or g/t/n): ").strip()
+        choice = input("Choose (0–6, or g/t/n): ").strip()
 
         # ── System options ─────────────────────────────────────────────────
 
@@ -903,10 +913,16 @@ def _main_loop(seed: int | None = None) -> None:
             break
 
         elif choice.lower() == "g":
-            _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
-            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
-            print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
-            time.sleep(0.7)
+            print(f"\n  🗺️  Choose generator:")
+            for _i, _g in enumerate(_GEN_CYCLE, 1):
+                _mark = f"{C_PATH}✔{C_END}" if _g == generator_type else " "
+                print(f"  {_mark} {_i}. {_g.upper()}")
+            _g_raw = input("  Pick (1–{n}): ".format(n=len(_GEN_CYCLE))).strip()
+            if _g_raw in {str(_i) for _i in range(1, len(_GEN_CYCLE) + 1)}:
+                generator_type = _GEN_CYCLE[int(_g_raw) - 1]
+                print(f"  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
+            else:
+                print(f"  {C_BACK}Unchanged.{C_END}")
             continue
 
         elif choice.lower() == "t":
@@ -929,7 +945,16 @@ def _main_loop(seed: int | None = None) -> None:
             recording = []
             continue
 
+        elif choice == "6":
+            _setup()
+            last_result = last_maze_after = None
+            last_algo_name = ""; recording = []
+            continue
+
         elif choice == "4":
+            if my_maze is None:
+                print(f"  {C_BACK}No maze yet.{C_END} Pick {C_PATH}6{C_END} to generate first.")
+                continue
             maze_bench = [row[:] for row in my_maze]
             for r, c in points[1:]:
                 maze_bench[r][c] = 'T'
@@ -979,6 +1004,18 @@ def _main_loop(seed: int | None = None) -> None:
             flush_stdin()
             input(f"\n👉 Press {C_PATH}ENTER{C_END} to see Report Card…")
             show_report_card(algo_name, result, terrain_active)
+
+            # Basic sanity check on the result — catches bugs where a tour
+            # claims to have collected all treasures but tour_order is short,
+            # or where tour_cost comes back as zero on a non-empty map.
+            if result.total_steps != float('inf'):
+                _res_err = validate_tsp_result(
+                    result.total_steps, result.tour_cost,
+                    result.n_collected, result.n_treasures,
+                    result.tour_order,
+                )
+                if _res_err:
+                    print(f"  {C_BACK}⚠  result validator: {_res_err}{C_END}")
 
             # ── Post-run menu (loops until bare ENTER) ─────────────────────
             has_autopsy = bool(recording)

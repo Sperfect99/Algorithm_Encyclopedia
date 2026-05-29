@@ -2,7 +2,7 @@
 
 # 🧩 Algorithm Encyclopedia
 
-### Watch algorithms solve mazes in real-time — pure Python, zero dependencies.
+### An interactive terminal sandbox for learning how pathfinding algorithms actually think.
 
 [![smoke tests](https://github.com/Sperfect99/Algorithm_Encyclopedia/actions/workflows/tests.yml/badge.svg)](https://github.com/Sperfect99/Algorithm_Encyclopedia/actions/workflows/tests.yml)
 
@@ -20,9 +20,13 @@
 
 Pick an algorithm. Watch it think. Compare it to another.
 
-Reading about BFS and A\* is one thing. Watching BFS fan out in every direction while A\* cuts straight toward the goal — on the same maze, at the same time — is something else entirely. That's what this project is for.
+Reading about BFS and A\* is one thing. Watching BFS fan out in every direction while A\* cuts straight toward the goal — on the same maze, at the same time — is something else entirely. That's what this is for.
 
-It's a terminal visualizer for 24+ classic algorithms across four problem domains, built without any external libraries. Every algorithm runs step-by-step with live colour animation, a live Big-O HUD, and a post-run report card. You can replay any run frame by frame, overlay two paths on the same maze, or race two algorithms side by side. The focus throughout is on making the *behaviour* of each algorithm visible, not just its output.
+A terminal visualizer for 24+ classic algorithms across four problem domains, built without any external libraries. Every algorithm runs step-by-step with live colour animation, a Big-O HUD, and a post-run report card. You can replay any run frame by frame, overlay two paths on the same maze, race two algorithms side by side, or step through a run cell by cell with the Autopsy Explainer — which explains in plain language what the algorithm is deciding and why.
+
+The goal is simple: make the *behaviour* of each algorithm visible, not just its result. Because the moment you see A\* ignore half the maze and still find the optimal path, the theory clicks in a way that a textbook diagram never quite manages.
+
+**This project is in active development.** The algorithm core is stable and tested. The interface is functional but still evolving — making it friendlier and more intuitive is the next major focus.
 
 ---
 
@@ -367,6 +371,20 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] Dead-end density control — control dead-end count independently from complexity level
 - [ ] Complexity scaling report — one algorithm across all 11 levels; shows how runtime grows, verifying Big-O in practice
 - [ ] Weighted terrain editor — define which cells are mud manually before running, for controlled experiments
+
+---
+
+## Feedback & Ideas
+
+This started as a personal project to understand algorithms better by building something that makes them *visible*. If it helps you the same way — or even just partially — that matters more than anything else.
+
+**If something confused you, annoyed you, or could be clearer, please say so.** Open an [Issue](../../issues) or start a [Discussion](../../discussions). You don't need to write code or submit a pull request — a sentence like "I didn't understand what the Autopsy Explainer was trying to show me" is genuinely useful.
+
+**The one thing I'm most interested in right now:** the interface. The menus work, but they're not as intuitive as I'd like. If you had to explain to someone else how to get from "open the program" to "compare BFS and A\* on the same maze", what would feel clunky or unclear? That kind of feedback is exactly what I need.
+
+**If you want to contribute code:** open an Issue first so we can talk about it before you spend time writing anything. The architecture is mid-refactor in places and I'd rather coordinate than have you work on something that conflicts with what's already in progress.
+
+Whatever you think — good, bad, confused — I'd genuinely like to hear it.
 
 ---
 

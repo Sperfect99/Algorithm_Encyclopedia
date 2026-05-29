@@ -28,8 +28,9 @@ from maze_modes import save_maze, load_maze
 
 # ── Core / UI layer ────────────────────────────────────────────────────────
 from core.types        import MapfResult
+from core.graph        import validate_mapf_result
 from ui.theme          import (
-    C_BIGO, C_END, C_HEAD, C_PATH, C_START, C_WALL, C_DOT,
+    C_BIGO, C_END, C_HEAD, C_PATH, C_START, C_WALL, C_DOT, C_BACK,
     C_CONFLICT, AGENT_COLORS, GOAL_COLORS,C_DIM,C_STAT,
     ansi_enable_windows,
 )
@@ -373,6 +374,10 @@ def setup_new_session(
             print("  Invalid input.")
     n_agents = n
 
+    s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+    _current_seed = s
+    _maze_count  += 1
+    _random.seed(s)
     print("\n⏳ Generating maze… Please wait!")
     maze = generate_maze(comp, generator_type)
     if terrain_active:
@@ -451,7 +456,8 @@ def _main_loop(seed: int | None = None) -> None:
             else f"{C_DOT}OFF{C_END}"
         )
 
-        gen_lbl     = f"\033[96m{generator_type.upper()}\033[0m"
+        gen_lbl  = f"\033[96m{generator_type.upper()}\033[0m"
+        seed_lbl = f"{C_DIM}{_current_seed}{C_END}" if maze is not None else f"{C_DIM}—{C_END}"
 
         W = _term_width()
         print("\n" + "═" * W)
@@ -464,6 +470,7 @@ def _main_loop(seed: int | None = None) -> None:
                 f"  |  Terrain: {terrain_lbl}"
                 f"  |  Agents: {C_HEAD}{n_agents}{C_END}"
                 f"  |  Gen: {gen_lbl}"
+                f"  |  Seed: {seed_lbl}"
             )
         else:
             print(f"  {C_DIM}No maze yet — pick an algorithm to generate one.  |  Gen: {gen_lbl}{C_END}")
@@ -486,11 +493,15 @@ def _main_loop(seed: int | None = None) -> None:
         print("  ─── Session ─────────────────────────────────────────")
         print("  4.  ⚔️  Algorithm Comparison  (run all 3, compare metrics)")
         print("  5.  📚  Tutorial")
+        if maze is None:
+            print(f"  {C_PATH}6.  ⚡  Generate Maze{C_END}  {C_BACK}← start here{C_END}")
+        else:
+            print("  6.  ⚡  Generate Maze  (replace current maze)")
         print(f"  {C_DOT}[g] Generator: {gen_lbl}   [t] Topology   [s] Save   [x] Export ASCII   [n] New maze{C_END}")
         print("  0.  Exit")
         print("─" * W)
 
-        choice = input("Choose (0–5, or g/t/s/n): ").strip()
+        choice = input("Choose (0–6, or g/t/s/n): ").strip()
 
         # ── Algorithm run ─────────────────────────────────────────────────
         if choice in ("1", "2", "3"):
@@ -508,6 +519,16 @@ def _main_loop(seed: int | None = None) -> None:
             input(f"\n👉 Press {C_PATH}ENTER{C_END} to see Report Card…")
             _show_report_card(name, result, n_agents)
 
+            # Sanity check — makespan and sum_of_costs must be internally
+            # consistent. collisions < 0 would mean a counter underflowed.
+            if result.makespan > 0:
+                _res_err = validate_mapf_result(
+                    result.makespan, result.sum_of_costs,
+                    result.collisions, n_agents,
+                )
+                if _res_err:
+                    print(f"  {C_BACK}⚠  result validator: {_res_err}{C_END}")
+
         elif choice == "4":
             if maze is None:
                 print(f"  {C_DIM}Generate a maze first — pick algorithm 1, 2, or 3.{C_END}")
@@ -520,11 +541,23 @@ def _main_loop(seed: int | None = None) -> None:
             _show_tutorial()
             continue
 
+        elif choice == "6":
+            result = setup_new_session(generator_type)
+            if result is not None:
+                maze, n_agents, terrain_active, delay, skip_frames, starts, goals, generator_type = result
+            continue
+
         elif choice.lower() == "g":
-            _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
-            generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
-            print(f"\n  🗺️  Generator → {generator_type.upper()} — takes effect on next maze.")
-            time.sleep(0.7)
+            print(f"\n  🗺️  Choose generator:")
+            for _i, _g in enumerate(_GEN_CYCLE, 1):
+                _mark = f"{C_PATH}✔{C_END}" if _g == generator_type else " "
+                print(f"  {_mark} {_i}. {_g.upper()}")
+            _g_raw = input("  Pick (1–{n}): ".format(n=len(_GEN_CYCLE))).strip()
+            if _g_raw in {str(_i) for _i in range(1, len(_GEN_CYCLE) + 1)}:
+                generator_type = _GEN_CYCLE[int(_g_raw) - 1]
+                print(f"  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
+            else:
+                print(f"  {C_BACK}Unchanged.{C_END}")
             continue
 
         elif choice.lower() == "t":

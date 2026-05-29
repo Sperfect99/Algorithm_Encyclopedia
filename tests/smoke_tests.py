@@ -39,7 +39,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from algorithms.registry import _REGISTRY, _get_generator
-from core.graph import validate_path
+from core.graph import validate_path, validate_yield
 
 # ---------------------------------------------------------------------------
 # Maze generator — embedded, self-contained
@@ -181,7 +181,12 @@ def _fresh_maze() -> list[list[int | str]]:
     return [row[:] for row in SMOKE_MAZE]
 
 
-def _run_algo(solve_fn, maze_copy: list, step_cap: int = 150_000):
+def _run_algo(
+    solve_fn,
+    maze_copy: list,
+    step_cap:  int  = 150_000,
+    algo_name: str  = "",
+):
     """Consume *solve_fn* to completion, return its RunResult.
 
     Raises RuntimeError if *step_cap* steps pass without a 'done' event —
@@ -190,6 +195,13 @@ def _run_algo(solve_fn, maze_copy: list, step_cap: int = 150_000):
     gen   = solve_fn(maze_copy)
     steps = 0
     for state in gen:
+        # Every yielded dict must conform to the generator contract.
+        # This catches missing keys and wrong types in new algorithm
+        # implementations before they can crash the animation loop.
+        contract_err = validate_yield(state, algo_name=algo_name)
+        if contract_err:
+            raise RuntimeError(f"Contract violation: {contract_err}")
+
         if state.get("type") == "done":
             return state.get("result")
         steps += 1
@@ -259,7 +271,7 @@ def run_all(verbose: bool = False, skip_slow: bool = False) -> bool:
             maze_copy = _fresh_maze()
             solve_fn  = _get_generator(mod)
             cap       = 1_000_000 if mod == "random_mouse" else 150_000
-            result    = _run_algo(solve_fn, maze_copy, cap)
+            result    = _run_algo(solve_fn, maze_copy, cap, algo_name=name)
 
         except Exception as exc:
             failed.append((name, [f"Exception: {type(exc).__name__}: {exc}"]))

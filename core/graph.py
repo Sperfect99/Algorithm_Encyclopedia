@@ -25,6 +25,70 @@ def manhattan_distance(p1: tuple[int, int], p2: tuple[int, int]) -> int:
 manhattan = manhattan_distance
 
 
+def validate_yield(state: object, algo_name: str = "") -> str | None:
+    """Check that one yielded dict from an algorithm generator is well-formed.
+
+    The generator contract has four valid event types:
+
+      step        — a cell was explored. Required keys: type, r, c, steps,
+                    title, restore.  r and c must be ints.
+      render      — a full-frame redraw (used by Bellman-Ford and similar).
+                    Required keys: type, steps, message.
+      record_only — autopsy capture without rendering (Bellman-Ford,
+                    Dead-End Filling). Required keys: type, r, c, prev, new.
+                    The animation loop records these but does not draw them.
+      done        — algorithm finished. Required keys: type, result.
+                    result must be a RunResult.
+
+    Returns None when the dict is valid, or a short description when not.
+    This is called in smoke_tests for every yielded state so that a new
+    algorithm with a missing key is caught immediately on the first CI run.
+    """
+    if not isinstance(state, dict):
+        return (f"{algo_name}: yielded {type(state).__name__}, "
+                f"expected dict")
+
+    t = state.get("type")
+    if t not in {"step", "render", "done", "record_only"}:
+        return (f"{algo_name}: unknown yield type {t!r} "
+                f"(expected 'step', 'render', 'record_only', or 'done')")
+
+    if t == "step":
+        for key in ("r", "c", "steps", "title", "restore"):
+            if key not in state:
+                return f"{algo_name}: step dict missing required key '{key}'"
+        if not isinstance(state["r"], int):
+            return (f"{algo_name}: step['r'] must be int, "
+                    f"got {type(state['r']).__name__}")
+        if not isinstance(state["c"], int):
+            return (f"{algo_name}: step['c'] must be int, "
+                    f"got {type(state['c']).__name__}")
+        if not isinstance(state["steps"], int):
+            return (f"{algo_name}: step['steps'] must be int, "
+                    f"got {type(state['steps']).__name__}")
+
+    elif t == "render":
+        for key in ("steps", "message"):
+            if key not in state:
+                return f"{algo_name}: render dict missing required key '{key}'"
+
+    elif t == "record_only":
+        for key in ("r", "c", "prev", "new"):
+            if key not in state:
+                return f"{algo_name}: record_only dict missing required key '{key}'"
+
+    elif t == "done":
+        if "result" not in state:
+            return f"{algo_name}: done dict missing required key 'result'"
+        # import here to avoid a circular import at module level
+        from core.types import RunResult
+        if not isinstance(state["result"], RunResult):
+            return (f"{algo_name}: done['result'] must be RunResult, "
+                    f"got {type(state['result']).__name__}")
+
+    return None
+
+
 def validate_path(
     maze:       list[list[int | str]],
     path_len:   int,
@@ -91,6 +155,83 @@ def validate_path(
 
     if 'P' not in _adj(end) and 'S' not in _adj(end):
         return "no P cell adjacent to E — path does not reach the end"
+
+    return None
+
+
+def validate_tsp_result(
+    total_steps:  float,
+    tour_cost:    int,
+    n_collected:  int,
+    n_treasures:  int,
+    tour_order:   tuple,
+) -> str | None:
+    """Sanity-check a TreasureRunResult after a TSP run.
+
+    Returns None when everything looks right, or a short description of
+    what went wrong. Called in treasure_solver2 after show_report_card.
+    """
+    import math
+    if math.isinf(total_steps):
+        return None  # algorithm didn't finish — nothing to check
+
+    if n_collected != n_treasures:
+        return (f"collected {n_collected} of {n_treasures} treasures "
+                f"— tour did not visit every point")
+
+    if tour_cost <= 0:
+        return f"tour_cost {tour_cost} ≤ 0 — impossible on a non-empty tour"
+
+    if len(tour_order) != n_treasures:
+        return (f"tour_order has {len(tour_order)} entries "
+                f"but map has {n_treasures} treasures")
+
+    return None
+
+
+def validate_mapf_result(
+    makespan:     int,
+    sum_of_costs: int,
+    collisions:   int,
+    n_agents:     int,
+) -> str | None:
+    """Sanity-check a MapfResult after a MAPF run.
+
+    Returns None when everything looks right, or a short description of
+    what went wrong. Called in multi_agent_solver after show_report_card.
+    """
+    if makespan <= 0:
+        return None  # no solution found — nothing to check
+
+    if sum_of_costs < n_agents:
+        return (f"sum_of_costs {sum_of_costs} < n_agents {n_agents} "
+                f"— every agent needs at least 1 step")
+
+    if collisions < 0:
+        return f"collisions {collisions} < 0 — counter corrupted"
+
+    return None
+
+
+def validate_pursuit_result(
+    steps:   int,
+    replans: int,
+    caught:  bool,
+) -> str | None:
+    """Sanity-check a PursuitResult after a Pursuit-Evasion run.
+
+    Returns None when everything looks right, or a short description of
+    what went wrong. Called in dynamic_solver3 after show_report_card.
+    """
+    if steps <= 0:
+        return None  # no movement recorded — nothing to check
+
+    if replans < 0:
+        return f"replans {replans} < 0 — counter corrupted"
+
+    if caught and replans > steps:
+        return (f"replans {replans} > steps {steps} "
+                f"— cannot replan more times than there are steps")
 
     return None
 
