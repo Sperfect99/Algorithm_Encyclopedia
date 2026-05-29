@@ -22,7 +22,7 @@ from core.types        import TreasureRunResult, _StepRecord
 from core.graph        import validate_tsp_result
 from ui.theme          import (                                # noqa: F401,F403
     C_WALL, C_DOT, C_BACK, C_HEAD, C_PATH, C_START, C_MUD, C_END,
-    C_DUEL2, C_BIGO, C_TREASURE, C_COLLECTED, C_GA_LIVE, C_STAT,
+    C_DUEL2, C_BIGO, C_TREASURE, C_GA_LIVE, C_STAT,
     C_DIM,
     ansi_enable_windows,
 )
@@ -682,6 +682,7 @@ def _prompt_speed() -> tuple[float, int]:
 
 def setup_treasure_maze(
     generator_type: str = "dfs",
+    seed: int | None = None,
 ) -> tuple[
     list[list[int | str]],
     list[tuple[int, int]],
@@ -768,10 +769,8 @@ def setup_treasure_maze(
     print("\n⏳ Generating maze and placing treasures… Please wait!")
 
     try:
-        s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
-        _current_seed = s
-        _maze_count  += 1
-        _random.seed(s)
+        _s = seed if seed is not None else _random.randint(1, 999_999)
+        _random.seed(_s)
         maze, points, dist_matrix, cost_matrix, path_matrix = generate_treasure_map(
             complexity=comp,
             num_treasures=n_t,
@@ -836,7 +835,11 @@ def _main_loop(seed: int | None = None) -> None:
     def _setup() -> None:
         nonlocal my_maze, points, dist_matrix, cost_matrix, path_matrix
         nonlocal delay, skip_frames, terrain_active, n_treasures, _stats, generator_type
-        result = setup_treasure_maze(generator_type)
+        nonlocal _maze_count, _current_seed
+        s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+        _maze_count   += 1
+        _current_seed  = s
+        result = setup_treasure_maze(generator_type, seed=s)
         (my_maze, points, dist_matrix, cost_matrix, path_matrix,
          delay, skip_frames, terrain_active, n_treasures, _stats, generator_type) = result
 
@@ -946,7 +949,13 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice == "6":
-            _setup()
+            s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+            _maze_count   += 1
+            _current_seed  = s
+            result = setup_treasure_maze(generator_type, seed=s)
+            if result is not None:
+                (my_maze, points, dist_matrix, cost_matrix, path_matrix,
+                 delay, skip_frames, terrain_active, n_treasures, _stats, generator_type) = result
             last_result = last_maze_after = None
             last_algo_name = ""; recording = []
             continue

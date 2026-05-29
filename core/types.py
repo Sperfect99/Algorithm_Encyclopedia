@@ -81,30 +81,29 @@ class MapfResult(NamedTuple):
         length of the longest individual path.
 
     ``collisions``
-        Conflict count with **algorithm-dependent semantics**:
+        Conflict count with algorithm-dependent semantics:
 
-        *Independent A**: total vertex conflicts observed during
+        Independent A*: total vertex conflicts observed during
         simulation — can be large on dense maps.
 
-        *Prioritized Planning*: always 0 by construction (space-time
+        Prioritized Planning: always 0 by construction (space-time
         reservations prevent conflicts before simulation).
 
-        *CBS — solved run*: always 0 by construction (the CT search
+        CBS solved run: always 0 by construction (the CT search
         terminates only when a conflict-free solution is proven).
 
-        *CBS — capped run* (``nodes_expanded ≥ max_nodes`` before
-        convergence): the true count of remaining vertex **and** edge
-        (swap) conflicts in the best partial solution found so far,
-        as computed by ``_count_all_conflicts()``.  May be > 1.
+        CBS capped run (nodes_expanded >= max_nodes before convergence):
+        the true count of remaining vertex and edge (swap) conflicts in
+        the best partial solution found so far. May be > 1.
 
-        Students comparing Independent A* vs CBS should interpret
-        this field as: "how many conflicts are still present in the
-        paths being displayed?"  A value of 0 always means
-        conflict-free; any positive value means agents will collide.
+        Students comparing Independent A* vs CBS should read this as
+        "how many conflicts are still present in the displayed paths?"
+        Zero always means conflict-free; any positive value means
+        agents will collide.
     """
     timesteps:    int    # simulation ticks to completion
     compute_time: float  # pure algorithm wall-time in seconds
-    sum_of_costs: int    # Σ individual move counts  (CBS optimality metric; len(path)-1 per agent)
+    sum_of_costs: int    # sum of individual move counts (CBS metric; len(path)-1 per agent)
     makespan:     int    # ticks until last agent reaches goal (== timesteps)
     collisions:   int    # vertex conflicts detected (0 = conflict-free)
 
@@ -171,10 +170,10 @@ class TreasureRunResult(NamedTuple):
         Benchmark tables can display "N/N ✅" without needing the points
         list to still be in scope.
     """
-    total_steps:   float       # total cells walked  (float → allows inf)
-    compute_time:  float       # pure algorithm wall-time in seconds
-    tour_cost:     int         # weighted terrain cost  (mud=3, road=1)
-    time_to_first: int         # steps before first treasure collected
+    total_steps:   float             # total cells walked  (float → allows inf)
+    compute_time:  float             # pure algorithm wall-time in seconds
+    tour_cost:     int               # weighted terrain cost  (mud=3, road=1)
+    time_to_first: int               # steps before first treasure collected
     tour_order:    tuple[int, ...]   # sequence of treasure indices visited (immutable)
-    n_collected:   int         # treasures collected (== n_treasures on success)
-    n_treasures:   int         # total treasures on the map
+    n_collected:   int               # treasures collected (== n_treasures on success)
+    n_treasures:   int               # total treasures on the map

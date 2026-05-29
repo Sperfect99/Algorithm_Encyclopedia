@@ -30,8 +30,8 @@ from maze_modes import save_maze, load_maze
 from core.types        import MapfResult
 from core.graph        import validate_mapf_result
 from ui.theme          import (
-    C_BIGO, C_END, C_HEAD, C_PATH, C_START, C_WALL, C_DOT, C_BACK,
-    C_CONFLICT, AGENT_COLORS, GOAL_COLORS,C_DIM,C_STAT,
+    C_BIGO, C_END, C_HEAD, C_PATH, C_START, C_DOT, C_BACK,
+    C_CONFLICT, AGENT_COLORS, GOAL_COLORS,C_DIM,
     ansi_enable_windows,
 )
 from ui.terminal_utils import clear_screen, _center_ansi, _check_terminal_size, _term_width, flush_stdin, restore_terminal
@@ -307,6 +307,7 @@ def _prompt_speed() -> tuple[float, int]:
 
 def setup_new_session(
     generator_type: str = "dfs",
+    seed: int | None = None,
 ) -> tuple[
     list[list[int | str]], float, int, bool,
     list[tuple[int, int]], list[tuple[int, int]], int, MazeStats,
@@ -374,10 +375,8 @@ def setup_new_session(
             print("  Invalid input.")
     n_agents = n
 
-    s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
-    _current_seed = s
-    _maze_count  += 1
-    _random.seed(s)
+    _s = seed if seed is not None else _random.randint(1, 999_999)
+    _random.seed(_s)
     print("\n⏳ Generating maze… Please wait!")
     maze = generate_maze(comp, generator_type)
     if terrain_active:
@@ -429,7 +428,11 @@ def _main_loop(seed: int | None = None) -> None:
     def _setup() -> None:
         nonlocal maze, delay, skip_frames, terrain_active
         nonlocal starts, goals, n_agents, _stats, generator_type
-        result = setup_new_session(generator_type)
+        nonlocal _maze_count, _current_seed
+        s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+        _maze_count   += 1
+        _current_seed  = s
+        result = setup_new_session(generator_type, seed=s)
         maze, delay, skip_frames, terrain_active, starts, goals, n_agents, _stats, generator_type = result
 
     maze:           list[list[int | str]] | None = None
@@ -542,7 +545,10 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice == "6":
-            result = setup_new_session(generator_type)
+            s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+            _maze_count   += 1
+            _current_seed  = s
+            result = setup_new_session(generator_type, seed=s)
             if result is not None:
                 maze, n_agents, terrain_active, delay, skip_frames, starts, goals, generator_type = result
             continue

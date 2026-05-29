@@ -29,7 +29,7 @@ from dynamic_gen3      import (
 from core.types        import PursuitResult
 from core.graph        import validate_pursuit_result
 from ui.theme          import (
-    C_BIGO, C_END, C_HEAD, C_PATH, C_TARGET, C_INTERCEPT, C_DOT, C_BACK,
+    C_BIGO, C_END, C_PATH, C_TARGET, C_INTERCEPT, C_DOT, C_BACK,
     C_CONFLICT, C_WALL, C_DIM,
     ansi_enable_windows,
 )
@@ -459,6 +459,7 @@ def _prompt_scenario(
 
 def setup_new_session(
     generator_type: str = "dfs",
+    seed: int | None = None,
 ) -> tuple[
     list[list[int | str]], float, int, bool,
     tuple[int, int], tuple[int, int], MazeStats,
@@ -512,10 +513,8 @@ def setup_new_session(
         if ans in {'y', 'yes'}:
             terrain_active = True
 
-    s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
-    _current_seed = s
-    _maze_count  += 1
-    _random.seed(s)
+    _s = seed if seed is not None else _random.randint(1, 999_999)
+    _random.seed(_s)
     print("\n⏳ Generating maze… Please wait!")
     maze = generate_maze(comp, generator_type)
     if terrain_active:
@@ -563,7 +562,11 @@ def _main_loop(seed: int | None = None) -> None:
     def _setup() -> None:
         nonlocal maze, delay, skip_frames, terrain_active
         nonlocal agent_start, target_start, _stats, generator_type
-        result = setup_new_session(generator_type)
+        nonlocal _maze_count, _current_seed
+        s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+        _maze_count   += 1
+        _current_seed  = s
+        result = setup_new_session(generator_type, seed=s)
         (maze, delay, skip_frames, terrain_active,
          agent_start, target_start, _stats, generator_type) = result
 
@@ -745,7 +748,10 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice == "8":
-            result = setup_new_session(generator_type)
+            s = (_base_seed + _maze_count) if _base_seed is not None else _random.randint(1, 999_999)
+            _maze_count   += 1
+            _current_seed  = s
+            result = setup_new_session(generator_type, seed=s)
             if result is not None:
                 maze, terrain_active, delay, skip_frames, agent_start, target_start, generator_type = result
             continue
