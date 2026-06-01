@@ -105,10 +105,22 @@ def render(
     fog:     set[tuple[int, int]] | None = None,
 ) -> None:
     """Single-pane maze render with ANSI colours."""
+    from ui.terminal_utils import _term_width
+    # Use the actual terminal width with no artificial cap — the cap
+    # in _term_width() (default max=120) is for menu formatting, but here
+    # we want the real column count so we only clip what truly doesn't fit.
+    tw = _term_width(maximum=999)
+
     output: list[str] = []
+    clipped = False
     for ri, row in enumerate(maze):
         parts: list[str] = []
+        vis_w = 0
         for ci, cell in enumerate(row):
+            if vis_w >= tw - 1:          # leave 1 column for the … indicator
+                parts.append(f"{C_DIM}…{C_END}")
+                clipped = True
+                break
             if (
                 fog is not None
                 and cell not in {1, 'S', 'E'}
@@ -117,6 +129,7 @@ def render(
                 parts.append(f"{C_FOG}█{C_END}")
             else:
                 parts.append(CELL_RENDER.get(cell, str(cell)))
+            vis_w += 1
         output.append("".join(parts))
 
     legend = (
@@ -129,7 +142,12 @@ def render(
         f"{C_DOT}Revealed: {len(fog)} cells{C_END}"
         if fog is not None else ""
     )
-    _render_frame(legend, fog_line, "\n".join(output), f"\n{message}")
+    clip_note = (
+        f"  {C_DIM}⚠  maze wider than terminal ({len(maze[0])} cols)"
+        f" — resize for full view{C_END}"
+        if clipped else ""
+    )
+    _render_frame(legend, fog_line, "\n".join(output), clip_note, f"\n{message}")
 
 
 

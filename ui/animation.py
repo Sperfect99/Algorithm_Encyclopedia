@@ -23,6 +23,7 @@ from ui.renderer import (
 )
 from ui.terminal_utils import (
     hide_cursor, show_cursor, precise_sleep, PROGRESS_BAR_WIDTH,
+    _TERMINAL_RESIZED,
 )
 
 
@@ -109,6 +110,7 @@ def run_algorithm(
                             f"  {C_DIM}(g=path cost  h=manhattan  f=g+h){C_END}"
                         )
                     render(maze, "\n".join(hud_lines), fog=fog)
+                    _TERMINAL_RESIZED[0] = False   # consumed
                     if delay > 0:
                         precise_sleep(delay)
 
@@ -130,8 +132,9 @@ def run_algorithm(
             elif stype == "render":
                 steps   = state["steps"]
                 message = state.get("message", "")
-                if steps % skip_frames == 0:
+                if steps % skip_frames == 0 or _TERMINAL_RESIZED[0]:
                     render(maze, message, fog=fog)
+                    _TERMINAL_RESIZED[0] = False
                     if delay > 0:
                         precise_sleep(delay)
 
@@ -757,7 +760,7 @@ def run_tsp_animation(
                 render_tsp(
                     maze,
                     f"✅ ALL {N} TREASURES COLLECTED!\n"
-                    f"   Hops (steps walked) : {int(result.total_steps)}"
+                    f"   Hops (steps walked) : {result.total_steps:.0f}"
                     f"  {C_STAT}← display metric{C_END}\n"
                     f"   Weighted tour cost  : {result.tour_cost}"
                     f"  {C_STAT}← what GA and Brute Force minimise (mud=3, road=1){C_END}\n"

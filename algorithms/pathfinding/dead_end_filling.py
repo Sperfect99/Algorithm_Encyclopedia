@@ -209,12 +209,16 @@ def solve(
                 }
 
     compute_time += time.perf_counter() - t0
-    path_note = (
-        " (includes loop remnants — braided maze)"
-        if path_len > (rows + cols) else ""
-    )
+    path_note = ""
+    if path_len > (rows + cols):
+        path_note = (
+            " ⚠  braided maze — multiple corridors survive, "
+            "not just the solution. path shown is not unique."
+        )
     msg = (
-        f"✅ SOLVED! | Walls Collapsed: {steps} | "
+        f"{'✅' if path_len > 0 else '❌'} Dead-End Filling "
+        f"{'done' if path_len > 0 else ': no path found'} | "
+        f"Walls Collapsed: {steps} | "
         f"Time: {compute_time * 1000:.2f} ms | "
         f"Surviving cells: {path_len}{path_note} | Cost: {path_cost}"
     )

@@ -168,17 +168,32 @@ def restore_terminal() -> None:
         sys.stdout.write("\033[0m\033[?25h")
         sys.stdout.flush()
     except Exception:
-        pass
-
-def _signal_to_systemexit(signum: int, frame: object) -> None:  # type: ignore[type-arg]
-    """Convert SIGTERM / SIGHUP into SystemExit so the atexit chain fires."""
+        pass  # stdout may already be closed during atexit or pipe teardown
     raise SystemExit(f"Terminated by signal {signum}")
+
+
+# Flag set by the SIGWINCH handler. The animation loop checks this each
+# frame and triggers a full redraw when True, then resets it to False.
+# A plain bool in a list so the signal handler (a different stack frame)
+# can mutate it without a global declaration.
+_TERMINAL_RESIZED: list[bool] = [False]
+
+
+def _sigwinch_handler(signum: int, frame: object) -> None:  # type: ignore[type-arg]
+    """Mark that the terminal was resized. The next render clears and redraws."""
+    _TERMINAL_RESIZED[0] = True
+
 
 if sys.platform != "win32":
     try:
         import signal as _signal
         _signal.signal(_signal.SIGTERM, _signal_to_systemexit)
         _signal.signal(_signal.SIGHUP,  _signal_to_systemexit)
+        # SIGWINCH fires whenever the terminal window is resized.
+        # We just set the flag — the renderer picks it up next frame.
+        # Not available on Windows; the try/except handles that gracefully.
+        if hasattr(_signal, 'SIGWINCH'):
+            _signal.signal(_signal.SIGWINCH, _sigwinch_handler)
     except (OSError, ValueError):
         pass  # not in main thread, or signal unavailable — best-effort
 

@@ -182,7 +182,7 @@ _REGISTRY: list[AlgorithmSpec] = [
             "   High step count is the price of low memory. Compare to A*."
         ),
         cost_optimal=True,
-        slow_maze_warning=True, slow_warn_cells=2_500,
+        slow_maze_warning=True, slow_warn_cells=1_200,
     ),
     AlgorithmSpec(
         key="8", module_name="bellman_ford", display_name="Bellman-Ford",
@@ -296,6 +296,7 @@ _REGISTRY: list[AlgorithmSpec] = [
             "   Capped at 10 000 steps. Why any intelligence beats randomness."
         ),
         step_label="Steps Wandered", might_fail=True,
+        slow_maze_warning=True, slow_warn_cells=400,
         bench_slow_warn=True, bench_warn_cells=0,
         bench_warn_reason="can take up to 10 000 steps",
     ),

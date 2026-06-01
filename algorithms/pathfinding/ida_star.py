@@ -185,9 +185,10 @@ def solve(
         "type":    "done",
         "result":  RunResult(float('inf'), compute_time, 0, 0),
         "message": (
-            f"❌ IDA*: iteration ceiling reached ({MAX_ITERS} bounds). "
-            f"Last threshold: {threshold:.0f}. "
-            f"This maze likely has extremely high terrain cost or is "
-            f"unsolvable — verify with BFS/A*."
+            f"❌ IDA*: hit search limit ({MAX_ITERS} iterations). "
+            f"Last f-threshold: {threshold:.0f}. "
+            f"This does not mean the maze is unsolvable — "
+            f"run BFS or A* to check. Likely cause: heavy mud terrain "
+            f"inflating path cost beyond the iteration budget."
         ),
     }

@@ -270,6 +270,11 @@ def setup_new_maze(
     """Prompt for generator/complexity/speed/terrain and return a freshly generated maze.
 
     Returns (maze, delay, skip_frames, terrain_active, generator_type).
+    When the user chooses [L] to load a saved maze, generator_type is
+    set to the original generator name from the file — callers can detect
+    a load by checking whether _current_seed was meaningful, but a simpler
+    signal is the _LOADED_MAZE sentinel returned in generator_type when
+    the maze came from a file (see below).
     """
     from maze_genV4 import GENERATORS, _GEN_CYCLE
 
@@ -345,7 +350,9 @@ def setup_new_maze(
                         f"\n  Resize before running if it looks off."
                     )
                 delay, skip_frames = _prompt_speed()
-                return maze, delay, skip_frames, terrain_active, loaded_gen
+                # Prefix the generator name so _setup_maze can tell this
+                # was loaded rather than generated, and skip seed display.
+                return maze, delay, skip_frames, terrain_active, f"loaded:{loaded_gen}"
             continue
         try:
             comp = int(raw)
@@ -640,10 +647,16 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
 
     def _setup_maze() -> None:
         """Run setup, seed the RNG, compute stats, show topology panel."""
-        nonlocal my_maze, _stats, _diff, delay, skip_frames, terrain_active, generator_type
+        nonlocal my_maze, _stats, _diff, delay, skip_frames, terrain_active
+        nonlocal generator_type, _current_seed
         s = _next_seed()
         _random.seed(s)
         my_maze, delay, skip_frames, terrain_active, generator_type = setup_new_maze(generator_type)
+        # When the user loads a saved maze the returned generator_type is
+        # prefixed with "loaded:" — strip it and mark the seed as N/A.
+        if generator_type.startswith("loaded:"):
+            generator_type = generator_type[len("loaded:"):]
+            _current_seed  = -1   # sentinel: seed is meaningless for loaded mazes
         _stats = maze_analyse(my_maze)
         _diff  = _stats.difficulty
         show_topology_panel(_stats, generator_type, len(my_maze), len(my_maze[0]))
@@ -686,7 +699,11 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
         gen_lbl     = f"{C_PATH}{generator_type.upper()}{C_END}"
         _dc         = C_PATH if _diff <= 25 else C_START if _diff <= 50 else C_RACE if _diff <= 75 else C_BACK
         diff_lbl    = f"{_dc}{_diff:>3}{C_END}" if _diff >= 0 else f"{C_DIM} — {C_END}"
-        seed_lbl    = f"{C_DIM}{_current_seed}{C_END}" if my_maze is not None else f"{C_DIM} — {C_END}"
+        seed_lbl    = (
+            f"{C_DIM}loaded{C_END}"    if _current_seed == -1 else
+            f"{C_DIM}{_current_seed}{C_END}" if my_maze is not None else
+            f"{C_DIM} — {C_END}"
+        )
         if _active_h_idx < 0:
             _adm = "?"   # plugin — admissibility unknown until proven
         elif _heuristic_presets[_active_h_idx][1]:
@@ -1070,6 +1087,16 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             has_heatmap = bool(visit_count)
             has_autopsy = bool(recording)
             has_duel    = result.steps != float('inf')
+
+            # Let the user know if the autopsy recording was cut short.
+            # This happens when a run has more steps than _AUTOPSY_MAX_FRAMES
+            # (50 000) — the replay will stop early without explanation otherwise.
+            if has_autopsy and result.steps != float('inf') and result.steps > 50_000:
+                print(
+                    f"  {C_DIM}⚠  autopsy recording capped at 50 000 frames "
+                    f"({result.steps:,.0f} total steps) — replay covers the "
+                    f"first portion of the run only.{C_END}"
+                )
             if not has_duel:
                 print(
                     f"  {C_DIM}(Duel unavailable — requires a successful run "

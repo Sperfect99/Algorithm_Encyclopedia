@@ -135,7 +135,7 @@ def show_report_card(
         efficiency = (
             result.path_len / result.steps * 100 if result.steps > 0 else 0.0
         )
-        print(f"  {step_label:<28}: {int(result.steps)}")
+        print(f"  {step_label:<28}: {result.steps:.0f}")
         
         path_len_label = "Surviving Cells" if algo_name == "Dead-End Filling" else "Path Length"
         path_len_note  = "  (all unfilled cells — may include loop remnants)" if algo_name == "Dead-End Filling" else "  (interior cells — S and E not counted)"
@@ -144,15 +144,20 @@ def show_report_card(
 
         if terrain_active:
             _cost_blind = algo_name not in _COST_OPTIMAL
-            _cost_note = (
-                f"  {C_DIM}← cost-blind: terrain ignored during search{C_END}"
-                if _cost_blind else ""
-            )
-            print(f"  {'Path Cost (weighted)':<28}: {result.path_cost}  (road=1, mud=3){_cost_note}")
-            
-            if result.path_cost != result.path_len:
-                mud_cells = (result.path_cost - result.path_len) // 2
-                print(f"  {'  └ mud cells on path':<28}: {mud_cells}")
+            if _cost_blind:
+                # BFS/Greedy/etc. count hops only — path_cost == path_len always.
+                # Show the weighted cost of the path they found so the user can
+                # compare it against Dijkstra's, but make the label unambiguous.
+                print(
+                    f"  {'Path Cost (hops only)':<28}: {result.path_cost}  "
+                    f"{C_DIM}← terrain ignored during search — "
+                    f"compare with Dijkstra to see the difference{C_END}"
+                )
+            else:
+                print(f"  {'Path Cost (weighted)':<28}: {result.path_cost}  (road=1, mud=3)")
+                if result.path_cost != result.path_len:
+                    mud_cells = (result.path_cost - result.path_len) // 2
+                    print(f"  {'  └ mud cells on path':<28}: {mud_cells}")
 
         if algo_name not in {"Dead-End Filling", "Wall Follower", "Pledge",
                              "Left-Hand Rule", "Bellman-Ford"}:
@@ -462,7 +467,7 @@ def _hypothesis_post_run(
 
     if 'step_estimate' in predictions and not failed:
         estimate  = predictions['step_estimate']
-        actual    = int(result.steps)
+        actual    = result.steps if result.steps != float('inf') else 0
         threshold = max(1, int(actual * 0.25))
 
         if abs(estimate - actual) <= threshold:
