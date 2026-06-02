@@ -164,13 +164,24 @@ def render_split(
     total2: int,
 ) -> None:
     """Render two maze states side-by-side for Race Mode."""
+    from ui.terminal_utils import _term_width
+    tw   = _term_width(maximum=999)
     cols = len(maze1[0])
 
+    # How many cells fit on each side when the divider (5 chars) is in the middle.
+    # If the terminal is wide enough we use the full maze width; otherwise we clip
+    # and tell the user how many columns they're missing.
+    max_per_side = max(1, (tw - 5) // 2)
+    clipped      = cols > max_per_side
+
     def _lines(maze: list[list[int | str]]) -> list[str]:
-        return [
-            "".join(CELL_RENDER.get(cell, str(cell)) for cell in row)
-            for row in maze
-        ]
+        rows_out = []
+        for row in maze:
+            rendered = [CELL_RENDER.get(cell, str(cell)) for cell in row]
+            if clipped:
+                rendered = rendered[:max_per_side - 1] + [f"{C_DIM}…{C_END}"]
+            rows_out.append("".join(rendered))
+        return rows_out
 
     lines1 = _lines(maze1)
     lines2 = _lines(maze2)
@@ -189,13 +200,14 @@ def render_split(
         else f"{C_HEAD}» step {step2}{C_END}"
     )
 
-    n1 = name1[: cols - 2] if len(name1) > cols - 2 else name1
-    n2 = name2[: cols - 2] if len(name2) > cols - 2 else name2
+    display_cols = max_per_side if clipped else cols
+    n1 = name1[: display_cols - 2] if len(name1) > display_cols - 2 else name1
+    n2 = name2[: display_cols - 2] if len(name2) > display_cols - 2 else name2
 
     vis_status1 = _strip_ansi(status1)
     vis_n1      = _strip_ansi(n1)
-    header_pad  = max(0, cols - _visual_width(vis_n1) - 2)
-    status_pad  = max(0, cols - _visual_width(vis_status1) - 2)
+    header_pad  = max(0, display_cols - _visual_width(vis_n1) - 2)
+    status_pad  = max(0, display_cols - _visual_width(vis_status1) - 2)
 
     header_row = (
         f"{C_PATH}◀ {n1}{C_END}" + " " * header_pad + "  │  " + f"{C_DUEL2}▶ {n2}{C_END}"
@@ -203,9 +215,16 @@ def render_split(
     status_row = (
         f"  {status1}" + " " * status_pad + "  │  " + f"  {status2}"
     )
-    divider = "─" * cols + "──┼──" + "─" * cols
-    grid    = "\n".join(f"{l1}  │  {l2}" for l1, l2 in zip_longest(lines1, lines2, fillvalue=" " * cols))
-    _render_frame(header_row, status_row, divider, grid)
+    divider   = "─" * display_cols + "──┼──" + "─" * display_cols
+    grid      = "\n".join(
+        f"{l1}  │  {l2}" for l1, l2 in zip_longest(lines1, lines2, fillvalue=" " * display_cols)
+    )
+    clip_note = (
+        f"\n  {C_DIM}⚠  maze wider than terminal — resize for full race view "
+        f"(need {cols * 2 + 5}, have {tw}){C_END}"
+        if clipped else ""
+    )
+    _render_frame(header_row, status_row, divider, grid, clip_note)
 
 
 
