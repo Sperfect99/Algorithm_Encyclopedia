@@ -169,7 +169,6 @@ def restore_terminal() -> None:
         sys.stdout.flush()
     except Exception:
         pass  # stdout may already be closed during atexit or pipe teardown
-    raise SystemExit(f"Terminated by signal {signum}")
 
 
 # Flag set by the SIGWINCH handler. The animation loop checks this each
@@ -182,6 +181,11 @@ _TERMINAL_RESIZED: list[bool] = [False]
 def _sigwinch_handler(signum: int, frame: object) -> None:  # type: ignore[type-arg]
     """Mark that the terminal was resized. The next render clears and redraws."""
     _TERMINAL_RESIZED[0] = True
+
+
+def _signal_to_systemexit(signum: int, frame: object) -> None:  # type: ignore[type-arg]
+    """Convert SIGTERM / SIGHUP into SystemExit so the atexit chain fires."""
+    raise SystemExit(f"Terminated by signal {signum}")
 
 
 if sys.platform != "win32":
