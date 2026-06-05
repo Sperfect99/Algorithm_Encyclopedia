@@ -62,6 +62,10 @@ S█~  █ █   █*****█   █   █   █
   1=BFS only (0)   2=A* only (0)   *=shared (91)
 ──────────────────────────────────────────────────────────────
 ```
+![big maze](gif/Algorithm_Encyclopedia_big_maze.gif)
+
+![Race mode](gif/Algorithm_Encyclopedia_dual.gif)
+
 
 ## Modules
 
