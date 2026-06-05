@@ -1155,23 +1155,84 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
 
         elif choice.lower() in _plugins:
-            plugin  = _plugins[choice.lower()]
-            spec    = _make_plugin_spec(choice.lower(), plugin["name"], plugin["note"])
+            if my_maze is None:
+                _setup_maze()
+                if my_maze is None:
+                    continue
+
+            plugin       = _plugins[choice.lower()]
+            spec         = _make_plugin_spec(choice.lower(), plugin["name"], plugin["note"])
             maze_copy    = [row[:] for row in my_maze]
-            visit_count  = {} if True else {}
-            fog          = set(fog if fog_mode and fog else [])
-            result = run_algorithm(
-                lambda m, fog=None, visit_count=None: _capped_solve(
-                    plugin["solve"], m, fog, visit_count
-                ),
-                maze_copy, spec, delay, skip_frames,
-                fog if fog_mode else None,
-                visit_count,
-                maze_diff=_diff,
-            )
-            # post-run options (heatmap, autopsy, duel) same as built-in algos
+            visit_count  = {}
+            plugin_fog   = {(0, 0), (rows - 1, cols - 1)} if fog_mode else None
+            _set_active_complexity(spec.display_name)
+            _start_recording()
+            try:
+                result = run_algorithm(
+                    _capped_solve(plugin["solve"], maze_copy, plugin_fog, visit_count),
+                    maze_copy, skip_frames, delay, spec.display_name,
+                    _ACTIVE_COMPLEXITY_SLOT, _ACTIVE_RECORDING,
+                    fog=plugin_fog,
+                    maze_diff=_diff,
+                )
+            finally:
+                recording = _stop_recording()
+                _clear_active_complexity()
             m_copy      = maze_copy
             last_result = result
+
+            show_report_card(spec.display_name, result, terrain_active, maze_diff=_diff)
+
+            if result.path_len > 0:
+                _path_err = validate_path(m_copy, result.path_len, result.path_cost)
+                if _path_err:
+                    print(f"  {C_BACK}⚠  path validator: {_path_err}{C_END}")
+
+            has_heatmap = bool(visit_count)
+            has_autopsy = bool(recording)
+
+            if has_autopsy and result.steps != float('inf') and result.steps > 50_000:
+                print(
+                    f"  {C_DIM}⚠  autopsy recording capped at 50 000 frames "
+                    f"({result.steps:,.0f} total steps) — replay covers the "
+                    f"first portion of the run only.{C_END}"
+                )
+
+            opts: list[str] = []
+            if has_heatmap:
+                opts.append("[h]eatmap")
+            if has_autopsy:
+                opts.append("[a]utopsy")
+
+            if opts:
+                prompt_opts = "  ".join(opts) + "  ENTER=done"
+                while True:
+                    post_choice = input(
+                        f"\n  ✨ Post-run: {prompt_opts}: "
+                    ).strip().lower()
+
+                    if post_choice == '':
+                        break
+
+                    if post_choice in {'h', 'heatmap'} and has_heatmap:
+                        render_heatmap(visit_count, m_copy, spec.display_name)
+                        input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
+
+                    elif post_choice in {'a', 'autopsy'} and has_autopsy:
+                        flush_stdin()
+                        _exp_raw = input(
+                            f"\n  Enable step-by-step explanations?"
+                            f"  ({C_PATH}b{C_END}=beginner  {C_BIGO}a{C_END}=advanced  {C_DIM}ENTER=off{C_END}): "
+                        ).strip().lower()
+                        _explain = _exp_raw in {'b', 'a', 'beginner', 'advanced', 'y', 'yes'}
+                        _level   = "advanced" if _exp_raw in {'a', 'advanced'} else "beginner"
+                        run_autopsy(my_maze, recording, spec.display_name,
+                                    explain=_explain, level=_level)
+
+                    else:
+                        print(f"  (Unrecognised — try: {prompt_opts})")
+            else:
+                input(f"\n👉 Press {C_PATH}ENTER{C_END} to continue…")
 
         else:
             print("  Invalid option — please try again.")

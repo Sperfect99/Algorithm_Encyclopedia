@@ -513,8 +513,8 @@ def setup_new_session(
         if ans in {'y', 'yes'}:
             terrain_active = True
 
-    _s = seed if seed is not None else _random.randint(1, 999_999)
-    _random.seed(_s)
+    _s = seed if seed is not None else random.randint(1, 999_999)
+    random.seed(_s)
     print("\n⏳ Generating maze… Please wait!")
     maze = generate_maze(comp, generator_type)
     if terrain_active:
@@ -753,7 +753,8 @@ def _main_loop(seed: int | None = None) -> None:
             _current_seed  = s
             result = setup_new_session(generator_type, seed=s)
             if result is not None:
-                maze, terrain_active, delay, skip_frames, agent_start, target_start, generator_type = result
+                (maze, delay, skip_frames, terrain_active,
+                 agent_start, target_start, _stats, generator_type) = result
             continue
 
         elif choice == "0":
@@ -852,4 +853,3 @@ if __name__ == "__main__":
         print(f"\n  \u2716  Crashed: {type(_exc).__name__}: {_exc}")
         print("  Run through _encyclopedia_launcher.py for a fuller error report.")
         raise
-        sys.exit(0)

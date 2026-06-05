@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import os
+import random
 from typing import NamedTuple
 
 from treasure_gen import generate_treasure_map, MAZE_SIZES
@@ -769,8 +770,8 @@ def setup_treasure_maze(
     print("\n⏳ Generating maze and placing treasures… Please wait!")
 
     try:
-        _s = seed if seed is not None else _random.randint(1, 999_999)
-        _random.seed(_s)
+        _s = seed if seed is not None else random.randint(1, 999_999)
+        random.seed(_s)
         maze, points, dist_matrix, cost_matrix, path_matrix = generate_treasure_map(
             complexity=comp,
             num_treasures=n_t,
@@ -1113,4 +1114,3 @@ if __name__ == "__main__":
         print(f"\n  \u2716  Crashed: {type(_exc).__name__}: {_exc}")
         print("  Run through _encyclopedia_launcher.py for a fuller error report.")
         raise
-        sys.exit(0)
