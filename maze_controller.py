@@ -137,7 +137,7 @@ def _discover_heuristic_plugins() -> dict[str, tuple[str, object]]:
     try:
         os.makedirs(plugin_dir, exist_ok=True)
     except OSError:
-        return plugins   # read-only filesystem — just skip plugins silently
+        return {}
 
     plugins: dict[str, tuple[str, object]] = {}
     _reserved = {'n', 't', 'x', 'h', 'g'}  # skip keys already bound in the main menu
