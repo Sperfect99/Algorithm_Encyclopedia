@@ -25,7 +25,7 @@ from maze_genV4 import (
 
 # ── Topology / save-load (shared utilities) ───────────────────────────────
 from maze_views import show_topology_panel
-from maze_modes import save_maze, load_maze
+from maze_modes import save_maze, load_maze, export_maze_ascii
 
 # ── Core / UI layer ────────────────────────────────────────────────────────
 from core.types        import MapfResult
