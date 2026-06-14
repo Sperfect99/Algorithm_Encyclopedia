@@ -574,9 +574,10 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice.lower() == "s":
-            path = save_maze(maze, terrain_active, generator_type)
-            if path:
-                print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
+            if maze is not None:
+                path = save_maze(maze, terrain_active, generator_type)
+                if path:
+                    print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
             time.sleep(0.8)
             continue
 
