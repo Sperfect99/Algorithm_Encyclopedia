@@ -716,6 +716,9 @@ def _main_loop(seed: int | None = None) -> None:
                     print(f"  {C_BACK}⚠  result validator: {_res_err}{C_END}")
 
         elif choice == "4":
+            if maze is None:
+                print(f"  {C_DIM}Generate a maze first — pick algorithm 1, 2, or 3.{C_END}")
+                continue
             maze_copy = [row[:] for row in maze]
             _run_comparison(
                 maze_copy, agent_start, target_start,
@@ -724,6 +727,9 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice == "5":
+            if maze is None:
+                print(f"  {C_DIM}Generate a maze first — pick algorithm 1, 2, or 3.{C_END}")
+                continue
             evasive, wall_schedule, lookahead, threshold = _prompt_scenario(
                 maze, agent_start, target_start
             )
