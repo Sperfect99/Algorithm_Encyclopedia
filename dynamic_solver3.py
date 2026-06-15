@@ -54,6 +54,7 @@ _SPEED_PRESETS: dict[str, tuple[float, int]] = {
     "3": (0.0,        3),
     "4": (0.0,  999_999),
 }
+_SPEED_NAMES: dict[str, str] = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
 
 _ALGO_NAMES: dict[str, str] = {
     "1": "Naive Recalculation",
@@ -589,7 +590,6 @@ def _main_loop(seed: int | None = None) -> None:
         rows = len(maze) if maze is not None else 0
         cols = len(maze[0]) if maze is not None else 0
 
-        _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
             (n for k, n in _SPEED_NAMES.items()
              if _SPEED_PRESETS[k] == (delay, skip_frames)),

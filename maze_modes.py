@@ -776,7 +776,7 @@ def _print_bar_chart(results: list[tuple[str, RunResult]]) -> None:
     this just makes the relative differences jump out.
     """
     BAR_WIDTH   = 32
-    NAME_WIDTH  = 14
+    NAME_WIDTH  = 17
 
     solved  = [(n, r) for n, r in results if r.steps != float('inf')]
     failed  = [(n, r) for n, r in results if r.steps == float('inf')]
@@ -855,7 +855,7 @@ def run_benchmark(
     print("\n" + "═" * W)
     print("🏆  FINAL BENCHMARK RESULTS  🏆".center(W))
     print("═" * W)
-    print(f"| {'ALGORITHM':<14} | {'STEPS':<13} | {'TIME (ms)':<10} | {cost_hdr:<10} | {'EFFICIENCY':<10} |")
+    print(f"| {'ALGORITHM':<17} | {'STEPS':<13} | {'TIME (ms)':<10} | {cost_hdr:<10} | {'EFFICIENCY':<10} |")
     print("-" * W)
 
     # Sort by path cost (terrain) or steps (no terrain).
@@ -872,7 +872,7 @@ def run_benchmark(
             f"{r.path_len / r.steps * 100:.1f}%"
             if r.steps not in {0, float('inf')} else "—"
         )
-        print(f"| {name:<14} | {steps_s:<13} | {r.compute_time * 1000:<10.2f} | {cost_s:<10} | {eff_s:<10} |")
+        print(f"| {name:<17} | {steps_s:<13} | {r.compute_time * 1000:<10.2f} | {cost_s:<10} | {eff_s:<10} |")
 
     print("═" * W)
     print(

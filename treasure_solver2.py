@@ -57,6 +57,7 @@ _SPEED_PRESETS: dict[str, tuple[float, int]] = {
     "3": (0.0,  3),
     "4": (0.0,  _BENCH_SKIP),
 }
+_SPEED_NAMES: dict[str, str] = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
 
 
 # ===========================================================================
@@ -866,7 +867,6 @@ def _main_loop(seed: int | None = None) -> None:
         terrain_lbl = f"{C_MUD}ON {C_END}" if terrain_active else f"{C_DOT}OFF{C_END}"
         gen_lbl     = f"\033[96m{generator_type.upper()}\033[0m"
         seed_lbl    = f"{C_DIM}{_current_seed}{C_END}" if my_maze is not None else f"{C_DIM}—{C_END}"
-        _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
             (n for k, n in _SPEED_NAMES.items()
              if _SPEED_PRESETS[k] == (delay, skip_frames)),
