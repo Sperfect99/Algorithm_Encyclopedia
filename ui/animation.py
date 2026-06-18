@@ -414,6 +414,7 @@ def run_pursuit_animation(
     _last_path:        list[tuple[int, int]]  = []
     _last_intercept:   tuple[int, int] | None = None
     _last_extra_walls: set[tuple[int, int]]   = set()
+    _last_vision:      set[tuple[int, int]]   = set()
     _dyn_changed:      set[tuple[int, int]]   = set()   # cells changed by perturb_fn
 
     hide_cursor()
@@ -429,6 +430,7 @@ def run_pursuit_animation(
                 replans     = state.get("replans", 0)
                 intercept   = state.get("intercept", None)
                 extra_walls = state.get("extra_walls", set()) | _dyn_changed
+                vision_cells = state.get("vision_cells", set())
 
                 is_replan = (stype == "replan")
                 is_caught = (stype == "caught")
@@ -467,6 +469,7 @@ def run_pursuit_animation(
                         intercept=intercept if skip_frames < _BENCH_SKIP else None,
                         message="\n".join(hud_parts),
                         extra_walls=extra_walls,
+                        vision_cells=vision_cells if skip_frames < _BENCH_SKIP else set(),
                     )
 
                     pause = delay
@@ -494,6 +497,7 @@ def run_pursuit_animation(
                     _last_path        = path
                     _last_intercept   = intercept
                     _last_extra_walls = extra_walls
+                    _last_vision      = vision_cells
 
             elif stype == "done":
                 result: PursuitResult = state["result"]
@@ -506,6 +510,7 @@ def run_pursuit_animation(
                     intercept=None,
                     message=message,
                     extra_walls=_last_extra_walls,
+                    vision_cells=_last_vision,
                 )
                 return result
 

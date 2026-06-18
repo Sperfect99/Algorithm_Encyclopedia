@@ -373,27 +373,34 @@ def render_mapf(
 # --- render_pursuit() — Pursuit/Pac-Man overlay ---
 
 def render_pursuit(
-    maze:        list[list[int | str]],
-    agent_pos:   tuple[int, int],
-    target_pos:  tuple[int, int],
-    path:        list[tuple[int, int]],
-    intercept:   tuple[int, int] | None,
-    message:     str = "",
-    extra_walls: set[tuple[int, int]] | None = None,
+    maze:         list[list[int | str]],
+    agent_pos:    tuple[int, int],
+    target_pos:   tuple[int, int],
+    path:         list[tuple[int, int]],
+    intercept:    tuple[int, int] | None,
+    message:      str = "",
+    extra_walls:  set[tuple[int, int]] | None = None,
+    vision_cells: set[tuple[int, int]] | None = None,
 ) -> None:
     """Render a dynamic pursuit state.
 
     Overlay priority: dynamic wall > agent > target > intercept > path > standard cell.
+    When vision_cells is provided (fog of war), cells outside the set render
+    as '░' to show the prey's limited view of the maze.
     """
-    extra_walls = extra_walls or set()
-    path_set    = set(path[1:]) if path else set()
+    extra_walls  = extra_walls  or set()
+    vision_cells = vision_cells or set()
+    fog_active   = bool(vision_cells)
+    path_set     = set(path[1:]) if path else set()
 
     output: list[str] = []
     for ri, row in enumerate(maze):
         parts: list[str] = []
         for ci, cell in enumerate(row):
             coord = (ri, ci)
-            if cell == 1 or coord in extra_walls:
+            if fog_active and coord not in vision_cells and coord != agent_pos and coord != target_pos:
+                parts.append(f"{C_DIM}░{C_END}")
+            elif cell == 1 or coord in extra_walls:
                 parts.append(f"{C_WALL}█{C_END}")
             elif coord == agent_pos:
                 parts.append(f"{C_PATH}►{C_END}")
@@ -411,12 +418,14 @@ def render_pursuit(
                 parts.append(" ")
         output.append("".join(parts))
 
+    fog_entry   = f"  {C_DIM}░{C_END}=unseen   " if fog_active else ""
     legend_line = (
         f"  {C_PATH}►{C_END}=agent   "
         f"{C_TARGET}◆{C_END}=target   "
         f"{C_INTERCEPT}✦{C_END}=intercept   "
         f"{C_DOT}·{C_END}=planned path   "
         f"{C_WALL}▪{C_END}=dynamic wall"
+        f"{fog_entry}"
     )
     _render_frame(legend_line, "\n".join(output), f"\n{message}")
 

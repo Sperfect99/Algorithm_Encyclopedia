@@ -193,6 +193,8 @@ def _dispatch(
     lookahead:            int = 5,
     repair_threshold:     int = 3,
     dyn_walls:            bool = False,
+    prey_mode:            str  = "evasive",
+    vision_radius:        int  = 0,
 ) -> PursuitResult:
     """Dispatch menu choice → pursuit generator → animation driver."""
     name = _ALGO_NAMES[choice]
@@ -200,16 +202,19 @@ def _dispatch(
 
     gen: Generator[dict, None, None]
     if choice == "1":
-        gen = solve_naive(maze, agent_start, target_start, evasive, wall_schedule)
+        gen = solve_naive(maze, agent_start, target_start, evasive, wall_schedule,
+                          prey_mode=prey_mode, vision_radius=vision_radius)
     elif choice == "2":
         gen = solve_dynamic_repair(
             maze, agent_start, target_start, evasive,
-            wall_schedule, repair_threshold,
+            wall_schedule, repair_threshold, prey_mode=prey_mode,
+            vision_radius=vision_radius,
         )
     else:
         gen = solve_greedy_intercept(
             maze, agent_start, target_start, evasive,
-            wall_schedule, lookahead,
+            wall_schedule, lookahead, prey_mode=prey_mode,
+            vision_radius=vision_radius,
         )
 
     # Build a perturb closure if dynamic walls are active.
@@ -240,20 +245,32 @@ def _dispatch(
 # ===========================================================================
 
 def _show_report_card(
-    algo_name:   str,
-    result:      PursuitResult,
-    evasive:     bool,
-    n_walls:     int,
-    lookahead:   int,
-    threshold:   int,
+    algo_name:     str,
+    result:        PursuitResult,
+    evasive:       bool,
+    n_walls:       int,
+    lookahead:     int,
+    threshold:     int,
+    prey_mode:     str = "evasive",
+    vision_radius: int = 0,
 ) -> None:
     W       = 72
     verdict = _ALGO_VERDICTS.get(algo_name, "")
+    _MODE_LABELS = {
+        "random":      "Random walk",
+        "evasive":     "Evasive",
+        "optimal":     "Optimal (Prey A*)",
+        "fog_evasive": "Fog / Evasive",
+        "fog_optimal": "Fog / Optimal",
+    }
 
     print("\n" + "═" * W)
     print(_center_ansi(f"📊  PURSUIT REPORT CARD — {algo_name}", W))
     print("═" * W)
-    print(f"  {'Target behaviour':<36}: {'Evasive' if evasive else 'Random walk'}")
+    mode_str = _MODE_LABELS.get(prey_mode, "Evasive")
+    if prey_mode in ("fog_evasive", "fog_optimal"):
+        mode_str += f"  (radius {vision_radius})"
+    print(f"  {'Target behaviour':<36}: {mode_str}")
     print(f"  {'Dynamic walls added':<36}: {n_walls}")
     if algo_name == "Greedy Intercept":
         print(f"  {'Velocity lookahead':<36}: {lookahead} steps")
@@ -316,6 +333,8 @@ def _run_comparison(
     wall_schedule: list[tuple[int, tuple[int, int]]],
     lookahead:     int,
     threshold:     int,
+    prey_mode:     str = "evasive",
+    vision_radius: int = 0,
 ) -> None:
     """Run all three algorithms on the same scenario and compare."""
     clear_screen()
@@ -323,6 +342,11 @@ def _run_comparison(
     print("\n" + "═" * _CW)
     print(_center_ansi("⚔️   PURSUIT ALGORITHM COMPARISON  ⚔️", _CW))
     print("═" * _CW)
+    _MODE_LABELS = {"random": "Random", "evasive": "Evasive", "optimal": "Optimal (Prey A*)",
+                    "fog_evasive": "Fog/Evasive", "fog_optimal": "Fog/Optimal"}
+    mode_label = _MODE_LABELS.get(prey_mode, prey_mode)
+    if prey_mode in ("fog_evasive", "fog_optimal"):
+        mode_label += f"  (radius {vision_radius})"
     fairness_note = (
         ""
         if evasive else
@@ -330,7 +354,7 @@ def _run_comparison(
         f"  (sequential runs, shared RNG). Use Evasive for a controlled comparison.{C_END}"
     )
     print(
-        f"  Target: {'Evasive' if evasive else 'Random'}  |  "
+        f"  Target: {mode_label}  |  "
         f"Dynamic walls: {len(wall_schedule)}"
         f"{fairness_note}\n"
     )
@@ -342,6 +366,7 @@ def _run_comparison(
         r = _dispatch(
             choice, maze_copy, agent_start, target_start,
             0.0, 999_999, evasive, wall_schedule, lookahead, threshold,
+            prey_mode=prey_mode, vision_radius=vision_radius,
         )
         results[name] = r
         status = "CAUGHT ✅" if r.caught else "ESCAPED ❌"
@@ -402,23 +427,44 @@ def _prompt_scenario(
 ) -> tuple[bool, list[tuple[int, tuple[int, int]]], int, int]:
     """
     Prompt user for scenario parameters:
-        - Target behaviour (random / evasive)
+        - Target behaviour (random / evasive / optimal / fog_evasive / fog_optimal)
         - Dynamic wall count
         - Lookahead (Greedy Intercept)
         - Repair threshold (Dynamic Repair)
+        - Vision radius (fog modes only)
 
-    Returns: (evasive, wall_schedule, lookahead, repair_threshold)
+    Returns: (evasive, wall_schedule, lookahead, repair_threshold, prey_mode, vision_radius)
     """
     print("\n  Target behaviour:")
     print("  1. Random walk    — picks a uniformly random valid neighbour")
     print("  2. Evasive        — greedy one-step: maximises distance each tick")
     print("                      (may corner itself — not a true adversarial planner)")
+    print("  3. Optimal        — Prey A*: full-map BFS, always moves into its own")
+    print("                      Voronoi region (maximises lead over the predator)")
+    print("  4. Fog / Evasive  — like Evasive but prey only sees within a radius;")
+    print("                      wanders until it spots the predator")
+    print("  5. Fog / Optimal  — like Optimal but BFS runs on seen cells only;")
+    print("                      same limited vision model as Fog / Evasive")
     while True:
-        t = input("  Target (1/2): ").strip()
-        if t in ("1", "2"):
+        t = input("  Target (1/2/3/4/5): ").strip()
+        if t in ("1", "2", "3", "4", "5"):
             break
-        print("  Enter 1 or 2.")
-    evasive = (t == "2")
+        print("  Enter 1, 2, 3, 4 or 5.")
+    prey_mode = {"1": "random", "2": "evasive", "3": "optimal",
+                 "4": "fog_evasive", "5": "fog_optimal"}[t]
+    evasive   = prey_mode != "random"
+
+    vision_radius = 0
+    if prey_mode in ("fog_evasive", "fog_optimal"):
+        while True:
+            try:
+                vr = int(input("  Vision radius (1–10, default 4): ").strip() or "4")
+                if 1 <= vr <= 10:
+                    vision_radius = vr
+                    break
+                print("  Enter a number between 1 and 10.")
+            except ValueError:
+                print("  Enter a number between 1 and 10.")
 
     while True:
         try:
@@ -455,7 +501,7 @@ def _prompt_scenario(
         except ValueError:
             print("  Invalid input.")
 
-    return evasive, wall_schedule, la, rt
+    return evasive, wall_schedule, la, rt, prey_mode, vision_radius
 
 
 def setup_new_session(
@@ -581,6 +627,8 @@ def _main_loop(seed: int | None = None) -> None:
 
     # Scenario parameters (persist across runs until user changes them)
     evasive:       bool                              = True
+    prey_mode:     str                               = "evasive"
+    vision_radius: int                               = 0
     wall_schedule: list[tuple[int, tuple[int, int]]] = []
     lookahead:     int                               = 5
     threshold:     int                               = 3
@@ -595,7 +643,13 @@ def _main_loop(seed: int | None = None) -> None:
              if _SPEED_PRESETS[k] == (delay, skip_frames)),
             "Custom",
         )
-        evade_lbl    = f"{C_TARGET}Evasive{C_END}" if evasive else f"{C_DOT}Random{C_END}"
+        evade_lbl    = {
+            "random":      f"{C_DOT}Random{C_END}",
+            "evasive":     f"{C_TARGET}Evasive{C_END}",
+            "optimal":     f"{C_PATH}Optimal{C_END}",
+            "fog_evasive": f"{C_TARGET}Fog/Evasive{C_END}",
+            "fog_optimal": f"{C_PATH}Fog/Optimal{C_END}",
+        }.get(prey_mode, f"{C_TARGET}Evasive{C_END}")
         terrain_lbl  = f"\033[38;5;130mON{C_END}" if terrain_active else f"{C_DOT}OFF{C_END}"
         walls_lbl    = (
             f"\033[38;5;208m{len(wall_schedule)} walls{C_END}"
@@ -698,13 +752,15 @@ def _main_loop(seed: int | None = None) -> None:
             result    = _dispatch(
                 choice, maze_copy, agent_start, target_start,
                 delay, skip_frames, evasive, wall_schedule,
-                lookahead, threshold, dyn_walls,
+                lookahead, threshold, dyn_walls, prey_mode=prey_mode,
+                vision_radius=vision_radius,
             )
 
             flush_stdin()
             input(f"\n👉 Press {C_PATH}ENTER{C_END} to see Report Card…")
             _show_report_card(
-                name, result, evasive, len(wall_schedule), lookahead, threshold
+                name, result, evasive, len(wall_schedule), lookahead, threshold,
+                prey_mode=prey_mode, vision_radius=vision_radius,
             )
 
             # Sanity check — replans cannot exceed steps, and neither
@@ -724,6 +780,7 @@ def _main_loop(seed: int | None = None) -> None:
             _run_comparison(
                 maze_copy, agent_start, target_start,
                 evasive, wall_schedule, lookahead, threshold,
+                prey_mode=prey_mode, vision_radius=vision_radius,
             )
             continue
 
@@ -731,10 +788,15 @@ def _main_loop(seed: int | None = None) -> None:
             if maze is None:
                 print(f"  {C_DIM}Generate a maze first — pick algorithm 1, 2, or 3.{C_END}")
                 continue
-            evasive, wall_schedule, lookahead, threshold = _prompt_scenario(
+            evasive, wall_schedule, lookahead, threshold, prey_mode, vision_radius = _prompt_scenario(
                 maze, agent_start, target_start
             )
-            print(f"\n  Scenario updated.  Target: {'Evasive' if evasive else 'Random'}")
+            _MODE_LABELS = {"random": "Random", "evasive": "Evasive", "optimal": "Optimal (Prey A*)",
+                            "fog_evasive": "Fog/Evasive", "fog_optimal": "Fog/Optimal"}
+            mode_label = _MODE_LABELS[prey_mode]
+            if prey_mode in ("fog_evasive", "fog_optimal"):
+                mode_label += f"  (radius {vision_radius})"
+            print(f"\n  Scenario updated.  Target: {mode_label}")
             time.sleep(0.8)
             continue
 

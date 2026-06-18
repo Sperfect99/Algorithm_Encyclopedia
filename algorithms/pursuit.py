@@ -80,19 +80,37 @@ def _astar(
 
 
 def _move_target(
-    maze:        list[list[int | str]],
-    target_pos:  tuple[int, int],
-    agent_pos:   tuple[int, int],
-    prev_dir:    tuple[int, int],
-    evasive:     bool = True,
-    extra_walls: set[tuple[int, int]] | None = None,
+    maze:            list[list[int | str]],
+    target_pos:      tuple[int, int],
+    agent_pos:       tuple[int, int],
+    prev_dir:        tuple[int, int],
+    prey_mode:       str = "evasive",
+    extra_walls:     set[tuple[int, int]] | None = None,
+    vision_radius:   int = 0,
+    target_memory:   dict[tuple[int, int], int] | None = None,
+    last_known_pred: list[tuple[int, int] | None] | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int]]:
     """
     Move the target one step.
 
-    Evasive mode  — prefers moves that maximise distance from the agent,
-                    with a small momentum bonus for the previous direction.
-    Random mode   — picks uniformly from valid neighbours.
+    prey_mode controls the target's decision strategy:
+      "random"       — picks uniformly from valid neighbours.
+      "evasive"      — greedy one-step: maximises distance from the agent
+                       with dead-end avoidance and oscillation suppression.
+      "optimal"      — Prey A*: full-map BFS from both prey and predator;
+                       moves to the neighbour that maximises the difference
+                       (predator_steps_to_cell - prey_steps_to_cell).
+                       Always stays in its own Voronoi region.
+      "fog_evasive"  — like "evasive" but the prey only knows what it has
+                       seen within vision_radius steps. Flees from the last
+                       known predator position; wanders when predator is
+                       outside its visible region.
+      "fog_optimal"  — like "optimal" but BFS runs only on the cells the
+                       prey has seen so far. Same memory model as fog_evasive.
+
+    vision_radius, target_memory, last_known_pred are used only for fog modes.
+    target_memory and last_known_pred are mutated in-place each tick so state
+    persists across calls — callers must pass the same objects every tick.
 
     Returns '(new_position, new_direction)'.
     """
@@ -110,9 +128,188 @@ def _move_target(
     if not valid:
         return target_pos, prev_dir   # completely enclosed — stay put
 
-    if not evasive:
+    if prey_mode == "random":
         nr, nc, ndr, ndc = random.choice(valid)
         return (nr, nc), (ndr, ndc)
+
+    if prey_mode == "optimal":
+        # ── Prey A*: full-map BFS from predator and prey ──────────────────
+        # Build cost maps: how many steps each side needs to reach every cell.
+        # The prey moves to the neighbour where it has the largest lead over
+        # the predator (maximise predator_dist - prey_dist).
+        # Hard survival filter: never step onto the predator's cell.
+
+        def _bfs_dist(source: tuple[int, int]) -> dict[tuple[int, int], int]:
+            dist: dict[tuple[int, int], int] = {source: 0}
+            frontier = [source]
+            head = 0
+            while head < len(frontier):
+                cr, cc = frontier[head]; head += 1
+                d = dist[(cr, cc)]
+                for ddr, ddc in DIRECTIONS:
+                    nnr, nnc = cr + ddr, cc + ddc
+                    nb = (nnr, nnc)
+                    if (nb not in dist
+                            and 0 <= nnr < rows and 0 <= nnc < cols
+                            and maze[nnr][nnc] in _PASSABLE
+                            and nb not in extra_walls):
+                        dist[nb] = d + 1
+                        frontier.append(nb)
+            return dist
+
+        pred_dist = _bfs_dist(agent_pos)
+        prey_dist = _bfs_dist(target_pos)
+
+        safe = [(nr, nc, dr, dc) for nr, nc, dr, dc in valid
+                if (nr, nc) != agent_pos]
+        pool = safe if safe else valid
+
+        def _advantage(nr: int, nc: int) -> int:
+            pd = pred_dist.get((nr, nc), rows * cols)
+            yd = prey_dist.get((nr, nc), rows * cols)
+            return pd - yd
+
+        best             = max(pool, key=lambda x: _advantage(x[0], x[1]))
+        nr, nc, ndr, ndc = best
+        return (nr, nc), (ndr, ndc)
+
+    if prey_mode in ("fog_evasive", "fog_optimal"):
+        # ── Fog of war: prey only knows what it has seen ──────────────────
+        # 1. BFS up to vision_radius steps from target_pos to find visible cells.
+        # 2. Merge into target_memory (accumulated across all ticks).
+        # 3. If predator is visible now, update last_known_pred.
+        # 4. Decide based on available information:
+        #    - predator known → flee using the chosen strategy
+        #    - predator never seen → wander (avoid reversing only)
+        mem   = target_memory if target_memory is not None else {}
+        lkp   = last_known_pred if last_known_pred is not None else [None]
+        rad   = max(1, vision_radius)
+
+        # BFS up to vision_radius steps from target_pos to find visible cells
+        visible: set[tuple[int, int]] = {target_pos}
+        vfront: list[tuple[tuple[int, int], int]] = [(target_pos, 0)]
+        vhi = 0
+        while vhi < len(vfront):
+            (vr, vc), vdepth = vfront[vhi]; vhi += 1
+            if vdepth >= rad:
+                continue
+            for ddr, ddc in DIRECTIONS:
+                nnr, nnc = vr + ddr, vc + ddc
+                nb = (nnr, nnc)
+                if (nb not in visible
+                        and 0 <= nnr < rows and 0 <= nnc < cols
+                        and maze[nnr][nnc] in _PASSABLE
+                        and nb not in extra_walls):
+                    visible.add(nb)
+                    vfront.append((nb, vdepth + 1))
+        mem.update({cell: 1 for cell in visible})
+
+        # Update last known predator position if predator is visible now
+        if agent_pos in visible:
+            lkp[0] = agent_pos
+
+        known_pred = lkp[0]
+
+        if known_pred is None:
+            # Never seen predator — wander without reversing
+            reverse_dir = (-prev_dir[0], -prev_dir[1])
+            non_rev = [(nr, nc, dr, dc) for nr, nc, dr, dc in valid
+                       if (dr, dc) != reverse_dir]
+            pool = non_rev if non_rev else valid
+            nr, nc, ndr, ndc = random.choice(pool)
+            return (nr, nc), (ndr, ndc)
+
+        # Predator known — flee using known_pred as the threat position
+        safe = [(nr, nc, dr, dc) for nr, nc, dr, dc in valid
+                if (nr, nc) != known_pred]
+        pool = safe if safe else valid
+
+        if prey_mode == "fog_optimal":
+            # Prey A* but on known subgraph only
+            def _bfs_known(source: tuple[int, int]) -> dict[tuple[int, int], int]:
+                dist: dict[tuple[int, int], int] = {source: 0}
+                frontier = [source]
+                head = 0
+                while head < len(frontier):
+                    cr, cc = frontier[head]; head += 1
+                    d = dist[(cr, cc)]
+                    for ddr, ddc in DIRECTIONS:
+                        nnr, nnc = cr + ddr, cc + ddc
+                        nb = (nnr, nnc)
+                        if (nb not in dist
+                                and nb in mem
+                                and 0 <= nnr < rows and 0 <= nnc < cols
+                                and maze[nnr][nnc] in _PASSABLE
+                                and nb not in extra_walls):
+                            dist[nb] = d + 1
+                            frontier.append(nb)
+                return dist
+
+            pred_dist_fog = _bfs_known(known_pred)
+            prey_dist_fog = _bfs_known(target_pos)
+            rc = rows * cols
+
+            def _adv_fog(nr: int, nc: int) -> int:
+                return (pred_dist_fog.get((nr, nc), rc)
+                        - prey_dist_fog.get((nr, nc), rc))
+
+            best             = max(pool, key=lambda x: _adv_fog(x[0], x[1]))
+            nr, nc, ndr, ndc = best
+            return (nr, nc), (ndr, ndc)
+
+        else:
+            # fog_evasive: Smart Mouse flee score from known_pred position
+            BFS_DEPTH   = 6
+            W_SPACE     = 1.5
+            W_DIST      = 3.0
+            REVERSE_PEN = 50.0
+            reverse_dir = (-prev_dir[0], -prev_dir[1])
+            kpr, kpc    = known_pred
+
+            fog_agent_dist: dict[tuple[int, int], int] = {known_pred: 0}
+            faf = [(kpr, kpc, 0)]
+            fah = 0
+            while fah < len(faf):
+                cr, cc, d = faf[fah]; fah += 1
+                if d >= BFS_DEPTH + 2:
+                    continue
+                for ddr, ddc in DIRECTIONS:
+                    nnr, nnc = cr + ddr, cc + ddc
+                    nb = (nnr, nnc)
+                    if (nb not in fog_agent_dist
+                            and nb in mem
+                            and 0 <= nnr < rows and 0 <= nnc < cols
+                            and maze[nnr][nnc] in _PASSABLE
+                            and nb not in extra_walls):
+                        fog_agent_dist[nb] = d + 1
+                        faf.append((nnr, nnc, d + 1))
+
+            def _fog_flee_score(nr: int, nc: int, dr: int, dc: int) -> float:
+                visited: set[tuple[int, int]] = {(nr, nc), known_pred}
+                frontier_e = [(nr, nc, 0)]
+                hd = 0
+                while hd < len(frontier_e):
+                    cr2, cc2, depth = frontier_e[hd]; hd += 1
+                    if depth >= BFS_DEPTH:
+                        continue
+                    for ddr2, ddc2 in DIRECTIONS:
+                        nnr2, nnc2 = cr2 + ddr2, cc2 + ddc2
+                        nb2 = (nnr2, nnc2)
+                        if (nb2 not in visited
+                                and nb2 in mem
+                                and 0 <= nnr2 < rows and 0 <= nnc2 < cols
+                                and maze[nnr2][nnc2] in _PASSABLE
+                                and nb2 not in extra_walls):
+                            visited.add(nb2)
+                            frontier_e.append((nnr2, nnc2, depth + 1))
+                space   = len(visited) - 1
+                dist_v  = float(fog_agent_dist.get((nr, nc), BFS_DEPTH + 3))
+                penalty = REVERSE_PEN if (dr, dc) == reverse_dir else 0.0
+                return W_SPACE * space + W_DIST * dist_v - penalty
+
+            best             = max(pool, key=lambda x: _fog_flee_score(x[0], x[1], x[2], x[3]))
+            nr, nc, ndr, ndc = best
+            return (nr, nc), (ndr, ndc)
 
     # ── Smart Mouse: 3-state heuristic ────────────────────────────────────
     dist_to_agent = _manhattan(target_pos, agent_pos)
@@ -273,6 +470,8 @@ def solve_naive(
     target_start:         tuple[int, int],
     evasive:              bool = True,
     extra_walls_schedule: list[tuple[int, tuple[int, int]]] | None = None,
+    prey_mode:            str  = "evasive",
+    vision_radius:        int  = 0,
 ) -> Generator[dict, None, None]:
     """
     Naive Recalculation — full A* replanned on every single tick.
@@ -295,6 +494,9 @@ def solve_naive(
     extra_walls: set[tuple[int, int]] = set()
     schedule     = _build_schedule(extra_walls_schedule)
 
+    target_memory:   dict[tuple[int, int], int] = {}
+    last_known_pred: list[tuple[int, int] | None] = [None]
+
     steps   = 0
     replans = 0
     t0_all  = time.perf_counter()
@@ -316,15 +518,16 @@ def solve_naive(
         caught = (agent_pos == target_pos)
 
         yield {
-            "type":        "step",
-            "title":       "Naive Recalculation",
-            "steps":       steps + 1 if caught else steps,
-            "agent_pos":   agent_pos,
-            "target_pos":  target_pos,
-            "path":        path,
-            "replans":     replans,
-            "caught":      caught,
-            "extra_walls": extra_walls,
+            "type":         "step",
+            "title":        "Naive Recalculation",
+            "steps":        steps + 1 if caught else steps,
+            "agent_pos":    agent_pos,
+            "target_pos":   target_pos,
+            "path":         path,
+            "replans":      replans,
+            "caught":       caught,
+            "extra_walls":  extra_walls,
+            "vision_cells": set(target_memory),
         }
 
         if caught:
@@ -336,7 +539,10 @@ def solve_naive(
         # Move target — then check cross-swap (agent A→B, target B→A)
         prev_target_pos = target_pos
         target_pos, prev_dir = _move_target(
-            maze, target_pos, agent_pos, prev_dir, evasive, extra_walls
+            maze, target_pos, agent_pos, prev_dir, prey_mode, extra_walls,
+            vision_radius=vision_radius,
+            target_memory=target_memory,
+            last_known_pred=last_known_pred,
         )
         if agent_pos == prev_target_pos and target_pos == prev_agent_pos:
             yield {"type": "caught", "steps": steps + 1, "agent_pos": agent_pos,
@@ -377,6 +583,8 @@ def solve_dynamic_repair(
     evasive:              bool = True,
     extra_walls_schedule: list[tuple[int, tuple[int, int]]] | None = None,
     repair_threshold:     int  = 3,
+    prey_mode:            str  = "evasive",
+    vision_radius:        int  = 0,
 ) -> Generator[dict, None, None]:
     """
     Dynamic Repair  (D* Lite inspired)  —  cache-and-repair strategy.
@@ -405,6 +613,9 @@ def solve_dynamic_repair(
     prev_dir: tuple[int, int] = (1, 0)
     extra_walls: set[tuple[int, int]] = set()
     schedule     = _build_schedule(extra_walls_schedule)
+
+    target_memory:   dict[tuple[int, int], int] = {}
+    last_known_pred: list[tuple[int, int] | None] = [None]
 
     # Initial plan — counted as replan #1 and emitted as a visible "replan"
     # event so the student sees it on the HUD.  Previously this A* call was
@@ -463,15 +674,16 @@ def solve_dynamic_repair(
         caught = (agent_pos == target_pos)
 
         yield {
-            "type":        "step",
-            "title":       "Dynamic Repair",
-            "steps":       steps + 1 if caught else steps,
-            "agent_pos":   agent_pos,
-            "target_pos":  target_pos,
-            "path":        path,
-            "replans":     replans,
-            "caught":      caught,
-            "extra_walls": extra_walls,
+            "type":         "step",
+            "title":        "Dynamic Repair",
+            "steps":        steps + 1 if caught else steps,
+            "agent_pos":    agent_pos,
+            "target_pos":   target_pos,
+            "path":         path,
+            "replans":      replans,
+            "caught":       caught,
+            "extra_walls":  extra_walls,
+            "vision_cells": set(target_memory),
         }
 
         if caught:
@@ -483,7 +695,10 @@ def solve_dynamic_repair(
         # Move target — then check cross-swap (agent A→B, target B→A)
         prev_target_pos = target_pos
         target_pos, prev_dir = _move_target(
-            maze, target_pos, agent_pos, prev_dir, evasive, extra_walls
+            maze, target_pos, agent_pos, prev_dir, prey_mode, extra_walls,
+            vision_radius=vision_radius,
+            target_memory=target_memory,
+            last_known_pred=last_known_pred,
         )
         if agent_pos == prev_target_pos and target_pos == prev_agent_pos:
             yield {"type": "caught", "steps": steps + 1, "agent_pos": agent_pos,
@@ -519,6 +734,8 @@ def solve_greedy_intercept(
     evasive:              bool = True,
     extra_walls_schedule: list[tuple[int, tuple[int, int]]] | None = None,
     lookahead:            int  = 5,
+    prey_mode:            str  = "evasive",
+    vision_radius:        int  = 0,
 ) -> Generator[dict, None, None]:
     """
     Greedy Intercept — velocity-projection pursuit.
@@ -549,6 +766,9 @@ def solve_greedy_intercept(
     prev_dir: tuple[int, int] = (1, 0)
     extra_walls: set[tuple[int, int]] = set()
     schedule     = _build_schedule(extra_walls_schedule)
+
+    target_memory:   dict[tuple[int, int], int] = {}
+    last_known_pred: list[tuple[int, int] | None] = [None]
 
     # Compute initial intercept and path — emitted as a visible "replan"
     # event (replan #1) so the student can see the algorithm's first
@@ -631,16 +851,17 @@ def solve_greedy_intercept(
         caught = (agent_pos == target_pos)
 
         yield {
-            "type":        "step",
-            "title":       "Greedy Intercept",
-            "steps":       steps + 1 if caught else steps,
-            "agent_pos":   agent_pos,
-            "target_pos":  target_pos,
-            "intercept":   intercept,
-            "path":        path,
-            "replans":     replans,
-            "caught":      caught,
-            "extra_walls": extra_walls,
+            "type":         "step",
+            "title":        "Greedy Intercept",
+            "steps":        steps + 1 if caught else steps,
+            "agent_pos":    agent_pos,
+            "target_pos":   target_pos,
+            "intercept":    intercept,
+            "path":         path,
+            "replans":      replans,
+            "caught":       caught,
+            "extra_walls":  extra_walls,
+            "vision_cells": set(target_memory),
         }
 
         if caught:
@@ -653,7 +874,10 @@ def solve_greedy_intercept(
         # Move target — then check cross-swap (agent A→B, target B→A)
         prev_target_pos = target_pos
         target_pos, prev_dir = _move_target(
-            maze, target_pos, agent_pos, prev_dir, evasive, extra_walls
+            maze, target_pos, agent_pos, prev_dir, prey_mode, extra_walls,
+            vision_radius=vision_radius,
+            target_memory=target_memory,
+            last_known_pred=last_known_pred,
         )
         if agent_pos == prev_target_pos and target_pos == prev_agent_pos:
             yield {"type": "caught", "steps": steps + 1, "agent_pos": agent_pos,
