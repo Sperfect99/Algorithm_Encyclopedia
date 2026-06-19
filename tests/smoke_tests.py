@@ -128,6 +128,12 @@ NONCOMPLETE_ALGOS = {
     "beam_search",   "flood_fill",
 }
 
+# Algorithms that produce valid any-angle paths where intermediate cells are
+# intentionally skipped via line-of-sight shortcuts.  The standard adjacency
+# check in validate_path (which expects every P cell to be a grid-neighbour
+# of the next) does not apply to these algorithms.
+SKIP_PATH_VALIDATE = {"theta_star"}
+
 # These take significantly longer on large mazes.
 SLOW_ALGOS = {"bellman_ford", "ida_star", "random_mouse"}
 
@@ -317,9 +323,12 @@ def run_all(verbose: bool = False, skip_slow: bool = False) -> bool:
 
             else:
                 # Physical path check — P cells must form a connected route S→E
-                path_err = validate_path(maze_copy, result.path_len, result.path_cost)
-                if path_err:
-                    errors.append(f"path correctness: {path_err}")
+                # Skipped for any-angle algorithms (e.g. Theta*) that intentionally
+                # jump over intermediate cells via line-of-sight shortcuts.
+                if mod not in SKIP_PATH_VALIDATE:
+                    path_err = validate_path(maze_copy, result.path_len, result.path_cost)
+                    if path_err:
+                        errors.append(f"path correctness: {path_err}")
 
             if result.steps == float("inf") and result.path_len > 0:
                 errors.append("steps=inf but path_len>0 — inconsistent result")
