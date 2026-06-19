@@ -207,12 +207,14 @@ def _dispatch_algorithm(
     fog:          set[tuple[int, int]] | None,
     visit_count:  dict[tuple[int, int], int] | None,
     heuristic_fn: object | None = None,
+    beam_width:   int           = 3,
 ) -> RunResult:
     """Route a menu choice string to the matching generator and run it.
 
     Also handles the large-maze warning for slow algorithms (driven by the
     AlgorithmSpec so we don't need any hardcoded algorithm names here).
     heuristic_fn is only forwarded when the selected algorithm is A*.
+    beam_width is only forwarded when the selected algorithm is Beam Search.
     """
     vc: dict[tuple[int, int], int] = visit_count if visit_count is not None else {}
     spec      = _SPEC_BY_KEY[choice]
@@ -236,6 +238,8 @@ def _dispatch_algorithm(
     # since they use positional-only or **kwargs signatures.
     if spec.module_name == "astar" and heuristic_fn is not None:
         gen = factory(maze, fog=fog, visit_count=vc, heuristic_fn=heuristic_fn)
+    elif spec.module_name == "beam_search":
+        gen = factory(maze, fog=fog, visit_count=vc, beam_width=beam_width)
     else:
         gen = factory(maze, fog=fog, visit_count=vc)  # type: ignore[operator]
 
@@ -516,6 +520,7 @@ def _compact_menu(
     size_lbl:       str = "",
     diff_lbl:       str = "",
     h_lbl:          str = "",
+    beam_lbl:       str = "",
     no_maze:        bool = False,
 ) -> None:
     """2-column algorithm grid for short terminals.
@@ -543,7 +548,7 @@ def _compact_menu(
         f"  |  Diff: {diff_lbl}"
     )
     if h_lbl:
-        print(f"  {C_DIM}A* heuristic: {h_lbl}{C_END}")
+        print(f"  {C_DIM}A* heuristic: {h_lbl}   │   Beam width: {beam_lbl}{C_END}")
     print("─" * W)
 
     for i, s1 in enumerate(col1):
@@ -567,11 +572,11 @@ def _compact_menu(
 
     t_on = terrain_active
     gen23 = (f"  {C_PATH}23.⚡GenMaze{C_END}" if no_maze
-             else f"  23.⚡GenMaze")
+             else f"  27.⚡GenMaze")
     print(
-        f"  16.🏆Benchmark  17.📚Tutorial"
-        f"  18.Fog:{fog_lbl}  19.Hyp:{hyp_lbl}"
-        f"  20.{C_RACE}🏎 Race{C_END}  21.📊Stats  22.🗺️Gen:{gen_lbl}"
+        f"  20.🏆Benchmark  21.📚Tutorial"
+        f"  22.Fog:{fog_lbl}  23.Hyp:{hyp_lbl}"
+        f"  24.{C_RACE}🏎 Race{C_END}  25.📊Stats  26.🗺️Gen:{gen_lbl}"
         f"{gen23}"
         f"  {C_DIM}[n]New  [t]Topo  [x]Export{C_END}"
     )
@@ -678,6 +683,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
     _active_h_idx: int  = 0                           # index into presets; -1 = plugin
     _active_h_key: str  = ""                          # plugin letter key when idx == -1
     _active_h_fn        = _heuristic_presets[0][2]    # callable — starts as manhattan
+    _active_beam_width  = 3                            # int — default width for Beam Search
     _active_h_label     = _heuristic_presets[0][0].split()[0]  # short name for info bar
 
     fog_mode:        bool                         = False
@@ -711,6 +717,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
         else:
             _adm = "✗"
         h_lbl       = f"{C_BIGO}{_active_h_label}{C_END} {C_DIM}{_adm}{C_END}"
+        beam_lbl    = f"{C_BIGO}w={_active_beam_width}{C_END}"
         hyp_lbl     = (
             f"{C_HYP}ON{C_END}  Score: {C_HYP}{hyp_pts}/{hyp_max_pts} pts{C_END}"
             if hypothesis_mode else f"{C_DOT}OFF{C_END}"
@@ -758,9 +765,9 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             print("  ─── V5 Post-Run Modes ───────────────────────────────────")
             print("  (After each run: [h]eatmap  [a]utopsy  [d]uel  ENTER=done)")
             print("  ─── Learning ────────────────────────────────────────────")
-            print("  17. 📚  Tutorial        (data structures & complexity)")
-            print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
-            print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
+            print("  21. 📚  Tutorial        (data structures & complexity)")
+            print(f"  22. 🌫️  Fog of War     — {fog_lbl}")
+            print(f"  23. 🔮  Hypothesis     — {hyp_lbl}")
             print("  0.  Exit")
             print("─" * W)
 
@@ -780,7 +787,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 f"  |  Diff: {diff_lbl}"
                 f"  |  Seed: {seed_lbl}"
             )
-            print(f"  {C_DIM}A* heuristic: {h_lbl}   [h] to change{C_END}")
+            print(f"  {C_DIM}A* heuristic: {h_lbl}   [h] to change   │   Beam width: {beam_lbl}   [b] to change{C_END}")
             print()
 
             for _section_name, _specs in _MENU_SECTIONS.items():
@@ -794,19 +801,19 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             print("  (After each run: [h]eatmap  [a]utopsy  [d]uel  ENTER=done)")
 
             print("  ─── System ──────────────────────────────────────────────")
-            print("  16. 🏆  Run Benchmark   (all algorithms at once)")
-            print("  17. 📚  Tutorial        (data structures & complexity)")
-            print(f"  18. 🌫️  Fog of War     — {fog_lbl}")
-            print(f"  19. 🔮  Hypothesis     — {hyp_lbl}")
-            print(f"  20. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
-            print("  21. 📊  Multi-Run Stats (N runs across fresh mazes)")
-            print(f"  22. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
+            print("  20. 🏆  Run Benchmark   (all algorithms at once)")
+            print("  21. 📚  Tutorial        (data structures & complexity)")
+            print(f"  22. 🌫️  Fog of War     — {fog_lbl}")
+            print(f"  23. 🔮  Hypothesis     — {hyp_lbl}")
+            print(f"  24. {C_RACE}🏎️  Race Mode{C_END}      (two algorithms, split-screen)")
+            print("  25. 📊  Multi-Run Stats (N runs across fresh mazes)")
+            print(f"  26. 🗺️  Generator      — {gen_lbl}  [{' → '.join(k.upper() for k in _GEN_CYCLE)}]")
             print(f"      🌿 Terrain        — {terrain_lbl}  (set at generation)")
             if my_maze is None:
                 print(f"  {C_PATH}23. ⚡  Generate Maze{C_END}  "
                       f"{C_BACK}← no maze yet — start here before Race or Benchmark{C_END}")
             else:
-                print(f"  23. ⚡  Generate Maze  "
+                print(f"  27. ⚡  Generate Maze  "
                       f"{C_DIM}(replaces current maze){C_END}")
             print(f"  {C_DIM}[n] New maze   [t] Topology   [x] Export ASCII{C_END}")
             print(f"  {C_BIGO}  📐 Big-O HUD  — always active during algorithm runs{C_END}")
@@ -828,13 +835,14 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 size_lbl,
                 diff_lbl,
                 h_lbl,
+                beam_lbl,
                 no_maze=my_maze is None,
             )
 
         _max_algo  = max(int(s.key) for s in _REGISTRY)
         _plug_hint = f" or {'/'.join(_plugins)}" if _plugins and not _learn else ""
         _no_maze   = my_maze is None
-        _top       = max(23, _max_algo)
+        _top       = max(27, _max_algo)
         choice     = input(
             f"Choose an option (0–{_top if not _learn else '19'}{_plug_hint}"
             f"{', n=new maze' if not _no_maze else ''}): "
@@ -842,7 +850,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
 
         # In learn mode silently redirect any hidden advanced option so
         # the user gets a helpful message rather than "invalid option".
-        if _learn and choice in {"16", "20", "21", "22"}:
+        if _learn and choice in {"20", "24", "25", "26"}:
             print(
                 f"  {C_DIM}That option is not available in learn mode."
                 f"  Run without --learn for the full experience.{C_END}"
@@ -919,6 +927,33 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 time.sleep(0.7)
             continue
 
+        elif choice.lower() == "b":
+            clear_screen()
+            W = _term_width()
+            print("\n" + "═" * W)
+            print(_center_ansi("📡  BEAM SEARCH WIDTH", W))
+            print("═" * W)
+            print(
+                f"\n  {C_DIM}Controls how many nodes survive each pruning step."
+                f"\n  width=1: pure hill-climbing (fastest, most likely to fail)."
+                f"\n  width=∞: equivalent to Greedy Best-First (never prunes)."
+                f"\n  Only affects Beam Search. Other algorithms ignore this.{C_END}\n"
+            )
+            print(f"  Current width: {C_BIGO}{_active_beam_width}{C_END}\n")
+            print("─" * W)
+            flush_stdin()
+            raw = input("  New width (1–50, ENTER to keep): ").strip()
+            if raw == "":
+                pass
+            elif raw.isdigit() and 1 <= int(raw) <= 50:
+                _active_beam_width = int(raw)
+                print(f"\n  Beam width → {C_BIGO}{_active_beam_width}{C_END}")
+                time.sleep(0.7)
+            else:
+                print("  Invalid — beam width unchanged.")
+                time.sleep(0.7)
+            continue
+
         # [g] — cycle maze generator DFS → Kruskal → Prim
         elif choice.lower() == "g":
             idx_g          = _GEN_CYCLE.index(generator_type)
@@ -945,33 +980,33 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 time.sleep(0.8)
             continue
 
-        elif choice == "16":
+        elif choice == "20":
             if my_maze is None:
-                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}27{C_END} to generate one first.")
                 continue
             run_benchmark(my_maze, delay, skip_frames, terrain_active, generator=generator_type, maze_diff=_diff, stats=_stats, dispatch_fn=_dispatch_algorithm)
             flush_stdin()
 
-        elif choice == "17":
+        elif choice == "21":
             show_tutorial()
             continue
 
-        elif choice == "22":
+        elif choice == "26":
             _cur = generator_type if generator_type in _GEN_CYCLE else _GEN_CYCLE[0]
             generator_type = _GEN_CYCLE[(_GEN_CYCLE.index(_cur) + 1) % len(_GEN_CYCLE)]
             print(f"\n  🗺️  Generator → {C_PATH}{generator_type.upper()}{C_END} — takes effect on next maze.")
             time.sleep(0.7)
             continue
 
-        elif choice == "21":
+        elif choice == "25":
             if my_maze is None:
-                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}27{C_END} to generate one first.")
                 continue
             run_multi_stats(dispatch_fn=_dispatch_algorithm, generator=generator_type)
             flush_stdin()
             continue
 
-        elif choice == "18":
+        elif choice == "22":
             fog_mode = not fog_mode
             status   = f"{C_BACK}ENABLED{C_END}" if fog_mode else f"{C_DOT}DISABLED{C_END}"
             print(f"\n  🌫️  Fog of War {status}.")
@@ -984,7 +1019,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             time.sleep(0.8)
             continue
 
-        elif choice == "19":
+        elif choice == "23":
             hypothesis_mode = not hypothesis_mode
             if hypothesis_mode:
                 hyp_pts = hyp_max_pts = 0
@@ -1001,13 +1036,13 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
             time.sleep(1.2)
             continue
 
-        elif choice == "23":
+        elif choice == "27":
             _setup_maze()
             continue
 
-        elif choice == "20":
+        elif choice == "24":
             if my_maze is None:
-                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}23{C_END} to generate one first.")
+                print(f"  {C_BACK}No maze yet.{C_END} Pick option {C_PATH}27{C_END} to generate one first.")
                 continue
             run_race(
                 my_maze, delay, skip_frames, terrain_active, fog_mode,
@@ -1043,6 +1078,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
                 result = _dispatch_algorithm(
                     choice, m_copy, delay, skip_frames, fog, visit_count,
                     heuristic_fn=_active_h_fn,
+                    beam_width=_active_beam_width,
                 )
             finally:
                 recording = _stop_recording()

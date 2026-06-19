@@ -338,6 +338,100 @@ _REGISTRY: list[AlgorithmSpec] = [
         ),
         step_label="Steps Traced", might_fail=True,
     ),
+    # ── Memory-Bounded ────────────────────────────────────────────────────
+    AlgorithmSpec(
+        key="16", module_name="beam_search", display_name="Beam Search",
+        bench_name="Beam Search", section="Memory-Bounded",
+        menu_note="width-k frontier, may fail",
+        big_o="T:O(V·k)       S:O(k)  ▸ fixed-width beam",
+        verdict=(
+            "Beam Search caps the frontier at beam_width nodes at every step.\n"
+            "   Trades completeness for memory: the beam may prune the only path\n"
+            "   to the goal, returning no solution. Wider beams are safer but use\n"
+            "   more memory and approach Greedy at beam_width = ∞.\n"
+            "   Use [b] in the menu to change the beam width before running."
+        ),
+        tutorial_title="Beam Search (Fixed-Width Frontier)",
+        tutorial_body=(
+            "fixed-width heap  |  space O(k)\n"
+            "   Greedy Best-First with a hard cap on frontier size.\n"
+            "   beam_width=1: hill-climbing. beam_width=∞: Greedy BFS.\n"
+            "   Incomplete — may miss the goal if it was pruned."
+        ),
+        step_label="Nodes Expanded", might_fail=True, pq_inspector=True,
+    ),
+    # ── Classic Search (bidirectional cost-aware) ─────────────────────────
+    AlgorithmSpec(
+        key="17", module_name="bidirectional_astar", display_name="Bidirectional A*",
+        bench_name="Bi-A*", section="Classic Search",
+        menu_note="two A* frontiers, cost-aware",
+        big_o="T:O(b^(d/2))    S:O(b^(d/2))  ▸ dual heaps",
+        verdict=(
+            "Two A* waves from S and E expand toward each other.\n"
+            "   Each frontier uses Manhattan distance as its heuristic.\n"
+            "   Stops when the top of either queue reaches g >= best_total/2\n"
+            "   (the MM criterion). Expands significantly fewer nodes than A*.\n"
+            "   Note: the simple alternating implementation may occasionally find\n"
+            "   a path slightly longer than optimal — use A* when cost-optimality\n"
+            "   is required. Compare with Bidirectional BFS in Duel mode."
+        ),
+        tutorial_title="Bidirectional A* (Dual Cost-Aware Frontiers)",
+        tutorial_body=(
+            "dual heaps  |  space O(b^(d/2))\n"
+            "   A* from both ends. MM stopping criterion.\n"
+            "   Cost-aware: mud terrain counted. Compare with Bi-BFS for\n"
+            "   cost vs hop-count trade-off."
+        ),
+        step_label="Nodes Expanded", hop_optimal=False, cost_optimal=False,
+        pq_inspector=False,
+    ),
+    # ── Topology-Based ────────────────────────────────────────────────────
+    AlgorithmSpec(
+        key="18", module_name="flood_fill", display_name="Flood Fill",
+        bench_name="Flood Fill", section="Topology-Based",
+        menu_note="reachability map, no target",
+        big_o="T:O(V)         S:O(V)  ▸ BFS without target",
+        verdict=(
+            "Flood Fill maps every cell reachable from S — it finds no path.\n"
+            "   path_len is the total number of reachable cells, not a route to E.\n"
+            "   Underpins micromouse competition strategy: flood from goal to build\n"
+            "   a distance map, then follow the gradient back.\n"
+            "   Compare the visited-cell heatmap with BFS to see how BFS stops\n"
+            "   as soon as it finds E while Flood Fill keeps going."
+        ),
+        tutorial_title="Flood Fill (Reachability Mapping)",
+        tutorial_body=(
+            "queue (BFS order)  |  space O(V)\n"
+            "   Expands from S with no target. Maps the full connected component.\n"
+            "   Micromouse: run from goal to get a distance map; follow gradient.\n"
+            "   path_len = reachable cells, not a route."
+        ),
+        step_label="Cells Flooded", might_fail=False,
+    ),
+    # ── Any-Angle ─────────────────────────────────────────────────────────
+    AlgorithmSpec(
+        key="19", module_name="theta_star", display_name="Theta*",
+        bench_name="Theta*", section="Any-Angle",
+        menu_note="A* with line-of-sight shortcuts",
+        big_o="T:O(V log V)   S:O(V)  ▸ heap + LOS check per neighbour",
+        verdict=(
+            "Theta* extends A* with a line-of-sight check per neighbour:\n"
+            "   if the grandparent (current node's parent) has clear LOS to\n"
+            "   the neighbour, the neighbour is connected directly to the\n"
+            "   grandparent, cutting across the grid at any angle.\n"
+            "   Paths are visually smoother and shorter than A* on open mazes.\n"
+            "   On dense mazes LOS rarely succeeds and behaviour approaches A*.\n"
+            "   Duel with A* to see the path-length difference."
+        ),
+        tutorial_title="Theta* (Any-Angle A* with Line-of-Sight)",
+        tutorial_body=(
+            "heap + per-neighbour LOS  |  space O(V)\n"
+            "   A* with grandparent shortcutting. LOS via Bresenham traversal.\n"
+            "   Paths cut diagonals: cost = Euclidean, not Manhattan.\n"
+            "   Duel with A* to see shorter any-angle paths."
+        ),
+        step_label="Nodes Expanded", cost_optimal=False, pq_inspector=True,
+    ),
 ]
 
 
@@ -369,4 +463,5 @@ _HOP_OPTIMAL:  frozenset[str] = frozenset({"BFS"})
 _COST_OPTIMAL: frozenset[str] = frozenset({"A*", "Dijkstra", "Bellman-Ford"})
 _MIGHT_FAIL:   frozenset[str] = frozenset({
     "Wall Follower", "Left-Hand Rule", "Pledge", "Random Mouse", "Trémaux",
+    "Beam Search",
 })

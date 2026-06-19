@@ -125,6 +125,7 @@ OPTIMAL_ALGOS = {"bfs", "astar", "dijkstra", "ida_star", "bellman_ford"}
 NONCOMPLETE_ALGOS = {
     "wall_follower", "left_hand", "pledge",
     "random_mouse",  "randomized_dfs",
+    "beam_search",   "flood_fill",
 }
 
 # These take significantly longer on large mazes.
