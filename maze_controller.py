@@ -533,8 +533,8 @@ def _compact_menu(
         return text + " " * max(0, width - _visual_width(_strip_ansi(text)))
 
     specs = list(_REGISTRY)
-    col1  = specs[:8]    # algorithms 1–8
-    col2  = specs[8:]    # algorithms 9–15
+    col1  = specs[:10]   # algorithms 1–10
+    col2  = specs[10:]   # algorithms 11–19
 
     print("\n" + "═" * W)
     print(_center_ansi("🎓  MAZE SOLVER — THE PROFESSOR'S EDITION  V7  🎓", W))
@@ -611,7 +611,7 @@ def _main_loop(mode: str = "full", seed: int | None = None) -> None:
     handler in main() stays clean.
 
     mode='full'  — everything visible, default behaviour
-    mode='learn' — algorithms 1-15 + Tutorial + Fog + Hypothesis only;
+    mode='learn' — algorithms 1-19 + Tutorial + Fog + Hypothesis only;
                    no Benchmark, Race, Multi-run, Generator, or plugins
     seed         — starting random seed; None means random per maze
     """

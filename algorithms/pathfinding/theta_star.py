@@ -35,11 +35,14 @@ def _line_of_sight(
     r0: int, c0: int,
     r1: int, c1: int,
     rows: int, cols: int,
-) -> bool:
-    """Return True if a straight line from (r0,c0) to (r1,c1) stays passable.
+) -> tuple[bool, float]:
+    """Trace a straight line from (r0,c0) to (r1,c1) across the grid.
 
-    Uses a grid-traversal that visits every cell the line segment crosses.
-    A cell is blocking if it is outside the grid or not in PASSABLE.
+    Returns (clear, cost). ``clear`` is True when every cell the line
+    crosses stays passable; ``cost`` is the terrain cost of the cells
+    entered along the way (the origin is not counted, matching how A*
+    charges for entering a cell rather than leaving it). When the line
+    hits a wall, ``clear`` is False and the cost is meaningless.
     """
     dr = abs(r1 - r0)
     dc = abs(c1 - c0)
@@ -47,12 +50,15 @@ def _line_of_sight(
     sc = 1 if c1 > c0 else -1
     err = dr - dc
     r, c = r0, c0
+    cost = 0.0
 
     while True:
         if not (0 <= r < rows and 0 <= c < cols and maze[r][c] in PASSABLE):
-            return False
+            return False, 0.0
+        if (r, c) != (r0, c0):
+            cost += terrain_cost(maze[r][c])
         if r == r1 and c == c1:
-            return True
+            return True, cost
         e2 = 2 * err
         if e2 > -dc:
             err -= dc
@@ -83,8 +89,10 @@ def solve(
     paths than A*.  On dense mazes the LOS check rarely succeeds and the
     behaviour approaches plain A*.
 
-    Terrain (mud) cost is included in the g values — mud cells are passable
-    but slow the path cost.  The LOS check treats mud as passable.
+    Terrain (mud) cost is included in the g values.  A line-of-sight
+    shortcut charges the geometric distance plus the extra cost of any
+    mud the straight line crosses, so cutting across mud is never cheaper
+    than the terrain actually warrants.
     """
     rows, cols = len(maze), len(maze[0])
     start, end = (0, 0), (rows - 1, cols - 1)
@@ -140,11 +148,19 @@ def solve(
             # ── Theta* line-of-sight check ────────────────────────────────
             # If grandparent has LOS to neighbor, shortcut via grandparent.
             # Otherwise fall back to the standard A* parent assignment.
-            if grand is not None and _line_of_sight(
-                maze, grand[0], grand[1], nr, nc, rows, cols
-            ):
+            los_clear, los_terrain = (False, 0.0)
+            if grand is not None:
+                los_clear, los_terrain = _line_of_sight(
+                    maze, grand[0], grand[1], nr, nc, rows, cols
+                )
+
+            if los_clear:
                 gr, gc  = grand
-                new_g   = g_score[grand] + _euclidean(gr, gc, nr, nc)
+                # Geometric (any-angle) distance plus the extra cost of any
+                # heavy terrain the straight line crosses, over the base 1/cell.
+                span    = _euclidean(gr, gc, nr, nc)
+                cells   = max(abs(nr - gr), abs(nc - gc))
+                new_g   = g_score[grand] + span + (los_terrain - cells)
                 new_par = grand
             else:
                 new_g   = g_score[curr] + terrain_cost(maze[nr][nc])

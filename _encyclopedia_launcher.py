@@ -328,7 +328,7 @@ def _print_help() -> None:
 {C_GOLD}Algorithm Encyclopedia — available flags{C_END}
 
   {C_PATH}--learn{C_END}      Opens Classic Pathfinding with a simplified menu.
-               Shows algorithms 1-15 and Tutorial only.
+               Shows algorithms 1-19 and Tutorial only.
                No Benchmark, Race Mode, Multi-run, or advanced options.
                Good first stop for anyone new to the project.
 
@@ -432,7 +432,7 @@ _MODULES: list[tuple[str, str, str, str]] = [
         "maze_controller",
         "Classic Pathfinding",
         (
-            f"    {C_BIGO}15 algorithms{C_END} on procedurally generated mazes.\n"
+            f"    {C_BIGO}19 algorithms{C_END} on procedurally generated mazes.\n"
             f"    BFS · DFS · A* · Dijkstra · IDA* · Bellman-Ford · Wall Followers\n"
             f"    {C_DIM}Includes Race Mode, Fog of War, Hypothesis Challenge, Autopsy & Heatmaps.{C_END}"
         ),

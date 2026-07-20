@@ -35,9 +35,12 @@ def solve(
     Stopping criterion
     ------------------
     The search terminates when the top of *either* priority queue has
-    g >= best_total / 2 (the MM criterion).  At that point no node
-    expanded next can improve on best_total, so the meeting node that
-    minimises g_s[m] + g_e[m] is chosen.
+    g >= best_total / 2. This is an MM-inspired approximation rather than
+    the full MM rule: it prunes most of the graph and gives good paths
+    fast, but the alternating single-step expansion without coordinated
+    f-priorities means the meeting node it settles on is occasionally a
+    little longer than optimal. The meeting node that minimises
+    g_s[m] + g_e[m] among the candidates is chosen.
 
     Cost vs hop count
     -----------------

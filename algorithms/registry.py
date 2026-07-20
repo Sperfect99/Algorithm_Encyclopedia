@@ -1,5 +1,5 @@
 """
-algorithms/registry.py — metadata for all 15 pathfinding algorithms.
+algorithms/registry.py — metadata for all 19 pathfinding algorithms.
 
 Display names, Big-O strings, verdicts, and tutorial content all live here.
 To add a new algorithm: drop a solve() file in algorithms/pathfinding/ and
@@ -370,7 +370,7 @@ _REGISTRY: list[AlgorithmSpec] = [
             "Two A* waves from S and E expand toward each other.\n"
             "   Each frontier uses Manhattan distance as its heuristic.\n"
             "   Stops when the top of either queue reaches g >= best_total/2\n"
-            "   (the MM criterion). Expands significantly fewer nodes than A*.\n"
+            "   (an MM-inspired rule). Expands far fewer nodes than A*.\n"
             "   Note: the simple alternating implementation may occasionally find\n"
             "   a path slightly longer than optimal — use A* when cost-optimality\n"
             "   is required. Compare with Bidirectional BFS in Duel mode."
@@ -378,7 +378,7 @@ _REGISTRY: list[AlgorithmSpec] = [
         tutorial_title="Bidirectional A* (Dual Cost-Aware Frontiers)",
         tutorial_body=(
             "dual heaps  |  space O(b^(d/2))\n"
-            "   A* from both ends. MM stopping criterion.\n"
+            "   A* from both ends, MM-inspired stopping rule.\n"
             "   Cost-aware: mud terrain counted. Compare with Bi-BFS for\n"
             "   cost vs hop-count trade-off."
         ),

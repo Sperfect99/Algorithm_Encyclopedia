@@ -1,5 +1,5 @@
 """
-Pathfinding helpers shared by all 15 algorithm files.
+Pathfinding helpers shared by all 19 algorithm files.
 
 Path reconstruction and cell marking — common logic that'd otherwise
 live in every single algorithm file.
