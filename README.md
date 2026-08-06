@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange?style=flat-square)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square)]()
-[![Algorithms](https://img.shields.io/badge/Algorithms-24%2B-purple?style=flat-square)]()
+[![Algorithms](https://img.shields.io/badge/Algorithms-28%2B-purple?style=flat-square)]()
 
 </div>
 
@@ -22,7 +22,7 @@ Pick an algorithm. Watch it think. Compare it to another.
 
 Reading about BFS and A\* is one thing. Watching BFS fan out in every direction while A\* cuts straight toward the goal — on the same maze, at the same time — is something else entirely. That's what this is for.
 
-A terminal visualizer for 24+ classic algorithms across four problem domains, built without any external libraries. Every algorithm runs step-by-step with live colour animation, a Big-O HUD, and a post-run report card. You can replay any run frame by frame, overlay two paths on the same maze, race two algorithms side by side, or step through a run cell by cell with the Autopsy Explainer — which explains in plain language what the algorithm is deciding and why.
+A terminal visualizer for 28+ classic algorithms across four problem domains, built without any external libraries. Every algorithm runs step-by-step with live colour animation, a Big-O HUD, and a post-run report card. You can replay any run frame by frame, overlay two paths on the same maze, race two algorithms side by side, or step through a run cell by cell with the Autopsy Explainer — which explains in plain language what the algorithm is deciding and why.
 
 The goal is simple: make the *behaviour* of each algorithm visible, not just its result. Because the moment you see A\* ignore half the maze and still find the optimal path, the theory clicks in a way that a textbook diagram never quite manages.
 
@@ -71,7 +71,7 @@ S█~  █ █   █*****█   █   █   █
 
 | # | Module | Algorithms |
 |---|--------|-----------|
-| **1** | [Classic Pathfinding](#classic-pathfinding) | BFS, DFS, A\*, Dijkstra, IDA\*, Bellman-Ford, Bidirectional BFS, Greedy, Wall Followers, Pledge, Random Mouse, Trémaux |
+| **1** | [Classic Pathfinding](#classic-pathfinding) | BFS, DFS, A\*, Dijkstra, IDA\*, Bellman-Ford, Bidirectional BFS, Greedy, Beam Search, Bidirectional A\*, Flood Fill, Theta\*, Wall Followers, Pledge, Random Mouse, Trémaux |
 | **2** | [TSP / Treasure Hunt](#tsp--treasure-hunt) | Nearest Neighbour, Brute Force (exact, N≤8), Genetic Algorithm + 2-opt |
 | **3** | [MAPF](#multi-agent-pathfinding-mapf) | Independent A\*, Prioritised Planning, Conflict-Based Search (CBS) |
 | **4** | [Pursuit-Evasion](#pursuit-evasion) | Naive Recalculation, Dynamic Repair (D\* Lite inspired), Greedy Intercept |
@@ -82,7 +82,7 @@ S█~  █ █   █*****█   █   █   █
 
 ### Classic Pathfinding
 
-15 algorithms on procedurally generated mazes (7×15 up to 61×151). Weighted terrain — mud patches cost 3× to traverse — makes the difference between cost-aware and cost-blind algorithms immediately visible. Run BFS and Dijkstra on the same muddy maze and compare the paths.
+19 algorithms on procedurally generated mazes (7×15 up to 61×151). Weighted terrain — mud patches cost 3× to traverse — makes the difference between cost-aware and cost-blind algorithms immediately visible. Run BFS and Dijkstra on the same muddy maze and compare the paths.
 
 | Algorithm | Optimal? | Cost-Aware? | Space | Notes |
 |-----------|:--------:|:-----------:|-------|-------|
@@ -101,6 +101,10 @@ S█~  █ █   █*****█   █   █   █
 | Random Mouse | ❌ | ❌ | O(1) | Pure random walk. Capped at 10k steps |
 | Randomized DFS | ❌ | ❌ | O(V) | DFS with shuffled direction order |
 | Trémaux (1882) | ✅ | ❌ | O(V) | Original chalk-mark method. Complete |
+| Beam Search | ❌ | ❌ | O(k) | Fixed-width frontier — width-k pruning, may fail |
+| Bidirectional A\* | ≈ cost | ✅ | O(V) | Dual A\* waves, MM-inspired stopping rule |
+| Flood Fill | — | — | O(V) | Maps every reachable cell, no target |
+| Theta\* | ≈ cost | ✅ | O(V) | Any-angle paths via line-of-sight shortcuts |
 
 ### TSP / Treasure Hunt
 
@@ -147,7 +151,7 @@ One agent chases a target that actively flees. The target moves every tick. The 
 **Comparison tools**
 - **Algorithm Duel** — two paths overlaid on the same maze; shared cells, A-only cells, and B-only cells each get a distinct colour
 - **Race Mode** — split-screen simultaneous replay of two algorithms on identical mazes
-- **Benchmark** — all 15 algorithms timed on the same maze, sorted results table, exported to CSV with topology columns
+- **Benchmark** — all 19 algorithms timed on the same maze, sorted results table, exported to CSV with topology columns
 
 **Post-run analysis**
 - **Autopsy** — step-by-step forward/backward replay of any run (ENTER / b / jump to step N)
@@ -177,7 +181,7 @@ One agent chases a target that actively flees. The target moves every tick. The 
 **Classroom / learning tools**
 - **Hypothesis Challenge** — before each run, predict the algorithm's behaviour; your predictions are scored afterward and tracked across the session
 - **Tutorial** — data structure and complexity notes for each algorithm, accessible from the main menu
-- **`--learn` flag** — simplified menu with just the 15 algorithms, tutorial, fog, and hypothesis; hides the advanced comparison modes for classroom use
+- **`--learn` flag** — simplified menu with just the 19 algorithms, tutorial, fog, and hypothesis; hides the advanced comparison modes for classroom use
 - Weighted terrain (mud = 3×) makes cost-aware vs cost-blind behaviour visible without any explanation needed
 
 **Extensibility**
@@ -212,7 +216,7 @@ python _encyclopedia_launcher.py
 Or run a single module directly:
 
 ```bash
-python maze_controller.py      # Classic Pathfinding (15 algorithms)
+python maze_controller.py      # Classic Pathfinding (19 algorithms)
 python treasure_solver2.py     # TSP / Treasure Hunt
 python multi_agent_solver.py   # MAPF
 python dynamic_solver3.py      # Pursuit-Evasion
@@ -239,7 +243,7 @@ python _encyclopedia_launcher.py --help         # list all flags
 
 **Running the tests directly** (no TTY needed, works in CI):
 ```bash
-python tests/smoke_tests.py          # all 15 algorithms
+python tests/smoke_tests.py          # all 19 algorithms
 python tests/smoke_tests.py -v       # verbose output
 python tests/smoke_tests.py --fast   # skip the three slowest algorithms
 ```
@@ -274,8 +278,8 @@ algorithm-encyclopedia/
 ├── tsp.py                        # TSP algorithm generators
 │
 ├── algorithms/
-│   ├── registry.py               # metadata for all 15 pathfinding algorithms
-│   └── pathfinding/              # one file per algorithm — bfs.py, astar.py, …
+│   ├── registry.py               # metadata for all 19 pathfinding algorithms
+│   └── pathfinding/              # one file per algorithm — bfs.py, astar.py, beam_search.py, theta_star.py, …
 │
 ├── core/
 │   ├── types.py                  # RunResult, MapfResult, PursuitResult, _StepRecord, etc.
@@ -288,7 +292,7 @@ algorithm-encyclopedia/
 │       └── _template.py          # starting point for a custom A* heuristic plugin
 │
 ├── tests/
-│   └── smoke_tests.py            # runs all 15 algorithms on a known maze; exit code 0 = all pass
+│   └── smoke_tests.py            # runs all 19 algorithms on a known maze; exit code 0 = all pass
 │
 ├── .github/
 │   └── workflows/
@@ -310,7 +314,7 @@ Generators in `algorithms/` have no UI code — they just yield state. The `ui/`
 The core visualiser is **complete and stable**. Active development continues.
 
 **Complete**
-- All 15 pathfinding algorithms — animation, autopsy, heatmap, duel, race, benchmark
+- All 19 pathfinding algorithms — animation, autopsy, heatmap, duel, race, benchmark
 - TSP module — Nearest Neighbour, Brute Force, and Genetic Algorithm (with 2-opt)
 - MAPF module — Independent A\*, Prioritised Planning, and CBS
 - Pursuit-Evasion module — all three strategies
@@ -331,7 +335,7 @@ The core visualiser is **complete and stable**. Active development continues.
 - Reproducible seed — `--seed N` flag; the active seed is shown in the HUD; same seed = same maze sequence
 - `--check` flag — verifies Python version, terminal size, ANSI support, platform, and all required files; exit code 0/1 for CI
 - `--test` flag — runs `tests/smoke_tests.py` from the launcher; `--test-v` verbose, `--test-fast` skips slow algorithms
-- Smoke tests (`tests/smoke_tests.py`) — all 15 algorithms on an 11×21 DFS-generated maze; optimal path length validated for BFS, A\*, Dijkstra, IDA\*, Bellman-Ford
+- Smoke tests (`tests/smoke_tests.py`) — all 19 algorithms on an 11×21 DFS-generated maze; optimal path length validated for BFS, A\*, Dijkstra, IDA\*, Bellman-Ford
 - Clean error boundaries in all four modules — `Ctrl+C` and unexpected crashes restore the terminal before printing any message; no more broken cursor or stale colours after a crash
 - CI via GitHub Actions — smoke tests run automatically on every push and pull request across Python 3.9–3.12 on Linux, macOS, and Windows
 
@@ -350,9 +354,14 @@ The core visualiser is **complete and stable**. Active development continues.
 - [ ] **Operations count** — counts node expansions, edge relaxations, heap operations instead of milliseconds — hardware-agnostic scoring
 
 *New algorithms*
-- [ ] **Bidirectional A\*** — the cost-aware version of the Bidirectional BFS already in the suite
-- [ ] Jump Point Search — A\* accelerator for uniform grids, skips symmetric nodes
-- [ ] Theta\* (any-angle) — A\* with diagonal movement, produces more natural paths
+- [x] ~~Bidirectional A\*~~ — shipped in v2.2.0
+- [x] ~~Theta\* (any-angle)~~ — shipped in v2.2.0
+- [x] ~~Beam Search~~ — shipped in v2.2.0
+- [x] ~~Flood Fill~~ — shipped in v2.2.0
+- [ ] Jump Point Search — A\* accelerator for uniform grids (requires iterative implementation for maze compatibility)
+- [ ] D\* Lite — incremental replanning for dynamic mazes
+- [ ] Fringe Search — IDA\*/A\* hybrid, low memory
+- [ ] RBFS — recursive best-first, O(bd) memory
 - [ ] MAPF: support more than 3 agents
 
 *Extensibility*
