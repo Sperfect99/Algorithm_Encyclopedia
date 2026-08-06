@@ -55,7 +55,6 @@ _SPEED_PRESETS: dict[str, tuple[float, int]] = {
     "3": (0.0,        3),   # Fast    — every 3rd frame
     "4": (0.0,  999_999),   # Instant — no animation
 }
-_SPEED_NAMES: dict[str, str] = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
 
 _ALGO_NAMES: dict[str, str] = {
     "1": "Independent A*",
@@ -317,7 +316,7 @@ def setup_new_session(
     """Interactive setup: maze size, speed, terrain, agent count, placement.
 
     Returns (maze, delay, skip_frames, terrain_active, starts, goals,
-             n_agents, stats).
+             n_agents, maze_stats, generator_type).
     """
     clear_screen()
     _SIZE_LABELS = {
@@ -365,14 +364,15 @@ def setup_new_session(
 
     print(
         f"\n  {C_DIM}2–3 agents: algorithms usually agree (good for learning basics)\n"
-        f"  4–5 agents: conflicts multiply — CBS vs PP tradeoffs become visible{C_END}"
+        f"  4–5 agents: conflicts multiply — CBS vs PP tradeoffs become visible\n"
+        f"  6–8 agents: stress test — watch CBS constraint tree explode{C_END}"
     )
     while True:
         try:
-            n = int(input("Number of agents (2–5): "))
-            if 2 <= n <= 5:
+            n = int(input("Number of agents (2–8): "))
+            if 2 <= n <= 8:
                 break
-            print("  Enter a number from 2 to 5.")
+            print("  Enter a number from 2 to 8.")
         except ValueError:
             print("  Invalid input.")
     n_agents = n
@@ -450,6 +450,7 @@ def _main_loop(seed: int | None = None) -> None:
         rows = len(maze) if maze is not None else 0
         cols = len(maze[0]) if maze is not None else 0
 
+        _SPEED_NAMES = {"1": "Slow", "2": "Normal", "3": "Fast", "4": "Instant"}
         speed_lbl = next(
             (n for k, n in _SPEED_NAMES.items()
              if _SPEED_PRESETS[k] == (delay, skip_frames)),
@@ -551,8 +552,7 @@ def _main_loop(seed: int | None = None) -> None:
             _current_seed  = s
             result = setup_new_session(generator_type, seed=s)
             if result is not None:
-                (maze, delay, skip_frames, terrain_active,
-                 starts, goals, n_agents, _stats, generator_type) = result
+                maze, n_agents, terrain_active, delay, skip_frames, starts, goals, generator_type = result
             continue
 
         elif choice.lower() == "g":
@@ -574,10 +574,9 @@ def _main_loop(seed: int | None = None) -> None:
             continue
 
         elif choice.lower() == "s":
-            if maze is not None:
-                path = save_maze(maze, terrain_active, generator_type)
-                if path:
-                    print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
+            path = save_maze(maze, terrain_active, generator_type)
+            if path:
+                print(f"  ✅ Saved to {C_PATH}{path}{C_END}")
             time.sleep(0.8)
             continue
 
@@ -678,14 +677,16 @@ def _show_tutorial() -> None:
         print(f"   {desc}")
 
     print("\n" + "═" * _TW)
+    _n = min(3, len(AGENT_COLORS))
+    agents_legend = "  ".join(
+        f"{AGENT_COLORS[i]}{i}{C_END}=Agent{i}" for i in range(_n)
+    )
+    goals_legend = "  ".join(
+        f"{GOAL_COLORS[i]}{chr(97+i)}{C_END}=Goal{i}" for i in range(_n)
+    )
     print(
-        f"\n  Legend:  "
-        f"{AGENT_COLORS[0]}0{C_END}=Agent0  "
-        f"{AGENT_COLORS[1]}1{C_END}=Agent1  "
-        f"{AGENT_COLORS[2]}2{C_END}=Agent2  "
-        f"{GOAL_COLORS[0]}a{C_END}=Goal0  "
-        f"{GOAL_COLORS[1]}b{C_END}=Goal1  "
-        f"{GOAL_COLORS[2]}c{C_END}=Goal2  "
+        f"\n  Legend:  {agents_legend}  "
+        f"{goals_legend}  "
         f"{C_CONFLICT}!{C_END}=Conflict"
     )
     input(f"\n👉 Press {C_PATH}ENTER{C_END} to return…")

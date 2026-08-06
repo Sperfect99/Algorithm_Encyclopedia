@@ -9,7 +9,7 @@ and handles every yield type they can emit.
 from __future__ import annotations
 
 import time
-from typing import Generator
+from typing import Callable, Generator
 
 from core.types import RunResult, MapfResult, PursuitResult, TreasureRunResult, _StepRecord
 from ui.theme   import (

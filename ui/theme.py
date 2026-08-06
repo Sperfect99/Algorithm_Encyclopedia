@@ -98,16 +98,24 @@ C_PQ    = "\033[38;5;220m" if _ANSI else ""   # amber      — PQ Inspector text
 
 # ── Phase 3: multi-agent colours ──────────────────────────────────────────────
 # Picked to be distinguishable from each other AND from Phase-1 colours.
-# TODO: if someone adds a 4th agent these run out — extend the AGENT_COLORS
-#       tuple and add C_AGENT3/C_GOAL3 here.
 C_AGENT0 = "\033[38;5;46m"  if _ANSI else ""  # vivid green  — Agent 0
 C_AGENT1 = "\033[38;5;33m"  if _ANSI else ""  # azure blue   — Agent 1
 C_AGENT2 = "\033[38;5;208m" if _ANSI else ""  # vivid orange — Agent 2
+C_AGENT3 = "\033[38;5;199m" if _ANSI else ""  # hot pink     — Agent 3
+C_AGENT4 = "\033[38;5;45m"  if _ANSI else ""  # turquoise    — Agent 4
+C_AGENT5 = "\033[38;5;227m" if _ANSI else ""  # light yellow — Agent 5
+C_AGENT6 = "\033[38;5;160m" if _ANSI else ""  # crimson      — Agent 6
+C_AGENT7 = "\033[38;5;141m" if _ANSI else ""  # lavender     — Agent 7
 
 # Goal markers are intentionally dimmer than agent markers for visual hierarchy
 C_GOAL0 = "\033[38;5;28m"  if _ANSI else ""   # dark green  — Agent 0 goal
 C_GOAL1 = "\033[38;5;25m"  if _ANSI else ""   # dark blue   — Agent 1 goal
 C_GOAL2 = "\033[38;5;94m"  if _ANSI else ""   # dark orange — Agent 2 goal
+C_GOAL3 = "\033[38;5;127m" if _ANSI else ""   # dim magenta — Agent 3 goal
+C_GOAL4 = "\033[38;5;30m"  if _ANSI else ""   # dim teal    — Agent 4 goal
+C_GOAL5 = "\033[38;5;136m" if _ANSI else ""   # dark yellow — Agent 5 goal
+C_GOAL6 = "\033[38;5;88m"  if _ANSI else ""   # dark red    — Agent 6 goal
+C_GOAL7 = "\033[38;5;97m"  if _ANSI else ""   # dim purple  — Agent 7 goal
 
 C_CONFLICT  = "\033[38;5;196m" if _ANSI else ""  # bright red — vertex collision
 C_TARGET    = "\033[38;5;201m" if _ANSI else ""  # magenta    — pursuit target
@@ -123,8 +131,14 @@ C_GA_LIVE   = "\033[38;5;44m"  if _ANSI else ""  # teal         — GA ghost-pat
 C_STAT      = "\033[38;5;117m" if _ANSI else ""  # sky blue     — stats / key metrics
 
 # Convenience tuples — MAPF controllers index by agent id
-AGENT_COLORS: tuple[str, ...] = (C_AGENT0, C_AGENT1, C_AGENT2)
-GOAL_COLORS:  tuple[str, ...] = (C_GOAL0,  C_GOAL1,  C_GOAL2)
+AGENT_COLORS: tuple[str, ...] = (
+    C_AGENT0, C_AGENT1, C_AGENT2, C_AGENT3,
+    C_AGENT4, C_AGENT5, C_AGENT6, C_AGENT7,
+)
+GOAL_COLORS: tuple[str, ...] = (
+    C_GOAL0, C_GOAL1, C_GOAL2, C_GOAL3,
+    C_GOAL4, C_GOAL5, C_GOAL6, C_GOAL7,
+)
 
 # ── Launcher / banner colours ──────────────────────────────────────────────────
 C_TITLE = "\033[38;5;226m" if _ANSI else ""  # yellow  — big ASCII art title
