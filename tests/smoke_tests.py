@@ -128,11 +128,10 @@ NONCOMPLETE_ALGOS = {
     "beam_search",   "flood_fill",
 }
 
-# Algorithms that produce valid any-angle paths where intermediate cells are
-# intentionally skipped via line-of-sight shortcuts.  The standard adjacency
-# check in validate_path (which expects every P cell to be a grid-neighbour
-# of the next) does not apply to these algorithms.
-SKIP_PATH_VALIDATE = {"theta_star"}
+# Flood Fill reports how many cells it reached, not a route from S to E, so the
+# S→E path check does not apply to it. Everything else that does find a path
+# gets that path checked, complete or not.
+NON_ROUTE_ALGOS = {"flood_fill"}
 
 # These take significantly longer on large mazes.
 SLOW_ALGOS = {"bellman_ford", "ida_star", "random_mouse"}
@@ -295,11 +294,15 @@ def run_all(verbose: bool = False, skip_slow: bool = False) -> bool:
             # Only check: terminates cleanly and step count is sane.
             if result.steps < 0:
                 errors.append(f"steps={result.steps} (expected ≥ 0)")
-            # If it found a path, sanity-check cost
+            # If it found a path, sanity-check cost and the path itself
             if result.path_len > 0 and result.path_cost < result.path_len - 1:
                 errors.append(
                     f"path_cost {result.path_cost} < path_len-1 {result.path_len - 1}"
                 )
+            elif result.path_len > 0 and mod not in NON_ROUTE_ALGOS:
+                path_err = validate_path(maze_copy, result.path_len, result.path_cost)
+                if path_err:
+                    errors.append(f"path correctness: {path_err}")
 
         else:
             # Must find a path
@@ -323,12 +326,9 @@ def run_all(verbose: bool = False, skip_slow: bool = False) -> bool:
 
             else:
                 # Physical path check — P cells must form a connected route S→E
-                # Skipped for any-angle algorithms (e.g. Theta*) that intentionally
-                # jump over intermediate cells via line-of-sight shortcuts.
-                if mod not in SKIP_PATH_VALIDATE:
-                    path_err = validate_path(maze_copy, result.path_len, result.path_cost)
-                    if path_err:
-                        errors.append(f"path correctness: {path_err}")
+                path_err = validate_path(maze_copy, result.path_len, result.path_cost)
+                if path_err:
+                    errors.append(f"path correctness: {path_err}")
 
             if result.steps == float("inf") and result.path_len > 0:
                 errors.append("steps=inf but path_len>0 — inconsistent result")

@@ -61,7 +61,7 @@ _TSP_POLISH_HOLD:      float = 0.3  # pause on the "2-opt polishing" status
 
 
 
-# --- run_algorithm() — Phase 1 driver for all 15 classic pathfinding algos ---
+# --- run_algorithm() — Phase 1 driver for all 19 classic pathfinding algos ---
 
 def run_algorithm(
     gen:                Generator[dict, None, None],

@@ -369,20 +369,22 @@ _REGISTRY: list[AlgorithmSpec] = [
         verdict=(
             "Two A* waves from S and E expand toward each other.\n"
             "   Each frontier uses Manhattan distance as its heuristic.\n"
-            "   Stops when the top of either queue reaches g >= best_total/2\n"
-            "   (an MM-inspired rule). Expands far fewer nodes than A*.\n"
-            "   Note: the simple alternating implementation may occasionally find\n"
-            "   a path slightly longer than optimal — use A* when cost-optimality\n"
-            "   is required. Compare with Bidirectional BFS in Duel mode."
+            "   Keeps going until neither frontier holds an f value that could\n"
+            "   beat the best join found, so the route it returns is optimal.\n"
+            "   On uniform ground it settles well under half the nodes A* does.\n"
+            "   Over heavy terrain Manhattan badly underestimates mud, the\n"
+            "   bound loosens and it can expand more than A* — a neat lesson in\n"
+            "   how much bidirectional search leans on a sharp heuristic.\n"
+            "   Compare with Bidirectional BFS in Duel mode."
         ),
         tutorial_title="Bidirectional A* (Dual Cost-Aware Frontiers)",
         tutorial_body=(
             "dual heaps  |  space O(b^(d/2))\n"
-            "   A* from both ends, MM-inspired stopping rule.\n"
+            "   A* from both ends; stops on the f-bound, stays optimal.\n"
             "   Cost-aware: mud terrain counted. Compare with Bi-BFS for\n"
             "   cost vs hop-count trade-off."
         ),
-        step_label="Nodes Expanded", hop_optimal=False, cost_optimal=False,
+        step_label="Nodes Expanded", hop_optimal=False, cost_optimal=True,
         pq_inspector=False,
     ),
     # ── Topology-Based ────────────────────────────────────────────────────
@@ -419,16 +421,20 @@ _REGISTRY: list[AlgorithmSpec] = [
             "   if the grandparent (current node's parent) has clear LOS to\n"
             "   the neighbour, the neighbour is connected directly to the\n"
             "   grandparent, cutting across the grid at any angle.\n"
-            "   Paths are visually smoother and shorter than A* on open mazes.\n"
-            "   On dense mazes LOS rarely succeeds and behaviour approaches A*.\n"
-            "   Duel with A* to see the path-length difference."
+            "   The route follows the straight line instead of an arbitrary\n"
+            "   staircase, and the reported straight-line length is shorter\n"
+            "   than A*'s cost. Cell count matches A* — on a four-way grid\n"
+            "   nothing can beat A* there, since the agent still walks the\n"
+            "   staircase. The gain is a smoother route reached with far\n"
+            "   fewer expansions. On dense mazes LOS rarely succeeds and\n"
+            "   behaviour approaches A*. Duel with A* to compare."
         ),
         tutorial_title="Theta* (Any-Angle A* with Line-of-Sight)",
         tutorial_body=(
             "heap + per-neighbour LOS  |  space O(V)\n"
             "   A* with grandparent shortcutting. LOS via Bresenham traversal.\n"
-            "   Paths cut diagonals: cost = Euclidean, not Manhattan.\n"
-            "   Duel with A* to see shorter any-angle paths."
+            "   Search cost is Euclidean, so routes hug the straight line.\n"
+            "   Watch the straight-line figure against A*'s cost in Duel."
         ),
         step_label="Nodes Expanded", cost_optimal=False, pq_inspector=True,
     ),
@@ -460,7 +466,9 @@ _ALGO_BIG_O:    dict[str, str] = {s.display_name: s.big_o    for s in _REGISTRY}
 _ALGO_VERDICTS: dict[str, str] = {s.display_name: s.verdict  for s in _REGISTRY}
 
 _HOP_OPTIMAL:  frozenset[str] = frozenset({"BFS"})
-_COST_OPTIMAL: frozenset[str] = frozenset({"A*", "Dijkstra", "Bellman-Ford"})
+_COST_OPTIMAL: frozenset[str] = frozenset({
+    "A*", "Dijkstra", "Bellman-Ford", "IDA*", "Bidirectional A*",
+})
 _MIGHT_FAIL:   frozenset[str] = frozenset({
     "Wall Follower", "Left-Hand Rule", "Pledge", "Random Mouse", "Trémaux",
     "Beam Search",

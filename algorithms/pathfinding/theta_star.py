@@ -24,10 +24,39 @@ from core.grid  import DIRECTIONS, PASSABLE, terrain_cost
 from core.graph import manhattan_distance
 from core.types import RunResult
 
-from ._shared import reconstruct_path_cells
 
 # Benchmark skip sentinel — PQ Inspector is disabled above this threshold.
 _BENCH_SKIP: int = 999_999
+
+
+def _line_cells(
+    r0: int, c0: int,
+    r1: int, c1: int,
+) -> Generator[tuple[int, int], None, None]:
+    """Yield every cell the straight line (r0,c0) → (r1,c1) passes through.
+
+    Bresenham traversal, origin first, destination last.  Both the
+    line-of-sight test and the path reconstruction walk this same line,
+    so what the search believes is reachable is exactly what gets drawn.
+    """
+    dr = abs(r1 - r0)
+    dc = abs(c1 - c0)
+    sr = 1 if r1 > r0 else -1
+    sc = 1 if c1 > c0 else -1
+    err = dr - dc
+    r, c = r0, c0
+
+    while True:
+        yield r, c
+        if r == r1 and c == c1:
+            return
+        e2 = 2 * err
+        if e2 > -dc:
+            err -= dc
+            r   += sr
+        if e2 < dr:
+            err += dr
+            c   += sc
 
 
 def _line_of_sight(
@@ -43,33 +72,92 @@ def _line_of_sight(
     entered along the way (the origin is not counted, matching how A*
     charges for entering a cell rather than leaving it). When the line
     hits a wall, ``clear`` is False and the cost is meaningless.
-    """
-    dr = abs(r1 - r0)
-    dc = abs(c1 - c0)
-    sr = 1 if r1 > r0 else -1
-    sc = 1 if c1 > c0 else -1
-    err = dr - dc
-    r, c = r0, c0
-    cost = 0.0
 
-    while True:
-        if not (0 <= r < rows and 0 <= c < cols and maze[r][c] in PASSABLE):
+    Where the line steps diagonally, at least one of the two corner cells
+    has to be open — the agent moves in four directions and cannot slip
+    between two walls that touch at a corner.
+    """
+    def open_cell(r: int, c: int) -> bool:
+        return 0 <= r < rows and 0 <= c < cols and maze[r][c] in PASSABLE
+
+    cost = 0.0
+    prev: tuple[int, int] | None = None
+
+    for r, c in _line_cells(r0, c0, r1, c1):
+        if not open_cell(r, c):
             return False, 0.0
-        if (r, c) != (r0, c0):
+        if prev is not None:
+            pr, pc = prev
+            if pr != r and pc != c and not (open_cell(pr, c) or open_cell(r, pc)):
+                return False, 0.0
             cost += terrain_cost(maze[r][c])
-        if r == r1 and c == c1:
-            return True, cost
-        e2 = 2 * err
-        if e2 > -dc:
-            err -= dc
-            r   += sr
-        if e2 < dr:
-            err += dr
-            c   += sc
+        prev = (r, c)
+
+    return True, cost
 
 
 def _euclidean(r0: int, c0: int, r1: int, c1: int) -> float:
     return math.sqrt((r1 - r0) ** 2 + (c1 - c0) ** 2)
+
+
+def _reconstruct_any_angle(
+    parent: dict[tuple[int, int], tuple[int, int] | None],
+    end:    tuple[int, int],
+    maze:   list[list[int | str]],
+    fog:    set[tuple[int, int]] | None = None,
+) -> tuple[int, int]:
+    """Stamp the full route 'P', filling in the cells LOS shortcuts jump over.
+
+    The parent chain only holds the turning points — between two of them the
+    agent still walks every cell on the straight line.  Marking just the
+    turning points would draw the solution as a handful of loose dots, so
+    each segment is filled in here.  Returns (path_len, path_cost) counted
+    over the cells actually traversed, the same way every other algorithm
+    reports them.
+    """
+    chain: list[tuple[int, int]] = []
+    curr: tuple[int, int] | None = end
+    while curr is not None:
+        chain.append(curr)
+        curr = parent.get(curr)
+    chain.reverse()
+
+    path_len  = 0
+    path_cost = 0
+    rows, cols = len(maze), len(maze[0])
+
+    def stamp(r: int, c: int) -> None:
+        nonlocal path_len, path_cost
+        if maze[r][c] in {'S', 'E', 'P'}:
+            return
+        path_cost  += terrain_cost(maze[r][c])
+        maze[r][c]  = 'P'
+        path_len   += 1
+        if fog is not None:
+            fog.add((r, c))
+
+    def walkable(r: int, c: int) -> bool:
+        return (
+            0 <= r < rows and 0 <= c < cols
+            and (maze[r][c] in PASSABLE or maze[r][c] == 'P')
+        )
+
+    for (r0, c0), (r1, c1) in zip(chain, chain[1:]):
+        walk = list(_line_cells(r0, c0, r1, c1))
+        stamp(*walk[0])
+        for (ra, ca), (rb, cb) in zip(walk, walk[1:]):
+            # A Bresenham line steps diagonally, but the agent only moves in
+            # four directions — drop in a corner cell so the trail it draws is
+            # one the agent could actually walk. The LOS check already refused
+            # the segment unless one of the two corners is open.
+            if ra != rb and ca != cb:
+                if walkable(ra, cb):
+                    stamp(ra, cb)
+                elif walkable(rb, ca):
+                    stamp(rb, ca)
+            stamp(rb, cb)
+
+    return path_len, path_cost
 
 
 def solve(
@@ -85,9 +173,12 @@ def solve(
     shortcut directly to the neighbour, giving a path that can travel
     at any angle rather than being constrained to grid edges.
 
-    On open mazes this produces noticeably shorter and more natural-looking
-    paths than A*.  On dense mazes the LOS check rarely succeeds and the
-    behaviour approaches plain A*.
+    On open mazes the route hugs the straight line instead of wandering
+    through an arbitrary staircase, and it gets there in far fewer
+    expansions than A*.  The cell count is the same as A* — the agent
+    only moves in four directions, so it still walks the staircase — but
+    the straight-line length reported alongside it is shorter.  On dense
+    mazes the LOS check rarely succeeds and behaviour approaches plain A*.
 
     Terrain (mud) cost is included in the g values.  A line-of-sight
     shortcut charges the geometric distance plus the extra cost of any
@@ -121,12 +212,18 @@ def solve(
         r, c = curr
         if curr == end:
             t1 = time.perf_counter()
-            path_len, path_cost = reconstruct_path_cells(parent, curr, maze, fog)
+            # The g value is the straight-line length of the route. On a
+            # four-way grid the agent still walks a staircase, so path_len
+            # matches A*; the shorter geometric length is what any-angle
+            # planning actually buys you.
+            geometric = g_score[curr]
+            path_len, path_cost = _reconstruct_any_angle(parent, curr, maze, fog)
             pure_time = compute_time + (time.perf_counter() - t1)
             msg = (
                 f"✅ SOLVED! | Steps: {int(steps)} | "
                 f"Time: {pure_time * 1000:.2f} ms | "
-                f"Path: {path_len} | Cost: {path_cost}"
+                f"Path: {path_len} | Cost: {path_cost} | "
+                f"Straight-line: {geometric:.1f}"
             )
             yield {
                 "type":    "done",

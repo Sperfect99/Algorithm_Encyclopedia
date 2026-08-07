@@ -81,6 +81,10 @@ def solve(
 
         if maze[r][c] not in {'S', 'E'}:
             path_cost   += terrain_cost(maze[r][c])
+            # Mark it here as well as via restore='P' below — benchmarks and
+            # the duel view consume this generator without the animation loop,
+            # and they still need the flooded area left on the maze.
+            maze[r][c]   = 'P'
             path_len    += 1
 
         compute_time += time.perf_counter() - t0
